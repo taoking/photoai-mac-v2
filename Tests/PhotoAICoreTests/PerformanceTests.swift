@@ -87,6 +87,73 @@ struct PerformanceTests {
         }
     }
 
+    /// 合成库的数据库复制一份到临时库（会改库的测量用）。
+    /// 复制到临时库旁边一个没被打开过的目录：盖掉已经打开的数据库文件会让那个连接读到坏的 WAL。
+    func copyOfSyntheticLibrary() throws -> (TemporaryLibrary, Library) {
+        let temp = try TemporaryLibrary()
+        let paths = LibraryPaths(root: temp.root.appendingPathComponent("perf-copy", isDirectory: true))
+        try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
+        for suffix in ["", "-wal"] {
+            let source = URL(fileURLWithPath: sourcePaths.database.path + suffix)
+            if FileManager.default.fileExists(atPath: source.path) {
+                try FileManager.default.copyItem(at: source, to: URL(fileURLWithPath: paths.database.path + suffix))
+            }
+        }
+        return (temp, try Library(paths: paths))
+    }
+
+    /// PF-10：移除一个含 1 万张以上照片的卷，≤ 1 秒。合成库每个卷约 16,700 张。
+    @Test func removeVolumeWithTenThousandPhotos() throws {
+        // 临时库一释放就会删掉整个目录，测量期间要留着。
+        let (scratch, library) = try copyOfSyntheticLibrary()
+        defer { withExtendedLifetime(scratch) {} }
+        let volume = try #require(try library.reader.volumes().first)
+        let count = try library.reader.volumeStats(volume.id).photoCount
+        #expect(count >= 10_000)
+        let impactStart = Date()
+        let impact = try library.reader.removalImpact(volume: volume.id)
+        let impactTime = Date().timeIntervalSince(impactStart)
+        let start = Date()
+        try library.removeVolume(volume.id)
+        let elapsed = Date().timeIntervalSince(start)
+        print(String(format: "PF-10 移除卷 %@（%d 张，其中 %d 张进入无卷关联）：%.0f ms；确认框的影响统计 %.0f ms",
+                     volume.name, count, impact.orphanedCount, elapsed * 1000, impactTime * 1000))
+        #expect(elapsed <= 1)
+        #expect(try library.reader.orphanCount() == impact.orphanedCount)
+        #expect(try library.reader.inconsistentLocationCounts().isEmpty)
+    }
+
+    /// PF-11：清卡检查 1 万张、在线副本在 SSD 上，≤ 10 秒。
+    /// 十万条库的副本里加一张 1 万组 RAW + JPEG 的卡和一块全部有副本的备份盘（都在本机 SSD 上），每个文件都要当场确认。
+    @Test func clearCardCheckTenThousandPhotos() async throws {
+        // 临时库一释放就会删掉整个目录，测量期间要留着。
+        let (scratch, library) = try copyOfSyntheticLibrary()
+        defer { withExtendedLifetime(scratch) {} }
+        let card = try FakeCard(), backup = try FakeCard()
+        for index in 0..<10_000 {
+            let date = String(format: "2027-02-%02d %02d:%02d:%02d", 1 + index / 3600 % 28, index / 60 % 60, index % 60, index % 60)
+            for ext in ["ARW", "JPG"] {
+                let name = String(format: "PF11_%05d.%@", index, ext)
+                try card.put("DCIM/\(100 + index / 1000)MSDCF/\(name)", date: date)
+                try backup.put("照片/\(100 + index / 1000)/\(name)", date: date)
+            }
+        }
+        let cardVolume = try library.addVolume(uuid: "PF11-CARD", name: "PF-11 卡", scanRoot: "DCIM")
+        let backupVolume = try library.addVolume(uuid: "PF11-BACKUP", name: "PF-11 备份盘", scanRoot: "照片")
+        let scanner = VolumeScanner(library: library, metadataReader: FakeMetadataReader())
+        try await scanner.scan(volumeID: cardVolume.id, mountURL: card.root)
+        try await scanner.scan(volumeID: backupVolume.id, mountURL: backup.root)
+
+        let finder = OriginalFinder(mounts: [cardVolume.id: card.root, backupVolume.id: backup.root]) { _ in true }
+        let start = Date()
+        let report = try ClearCardChecker(library: library, finder: finder).check(volumeID: cardVolume.id)
+        let elapsed = Date().timeIntervalSince(start)
+        print(String(format: "PF-11 清卡检查 %d 张、%d 个文件（十万条库，副本在本机 SSD）：%.0f ms，已核实 %d",
+                     report.photoCount, report.fileCount, elapsed * 1000, report.verifiedFileCount))
+        #expect(report.photoCount == 10_000 && report.verifiedFileCount == 20_000)
+        #expect(elapsed <= 10)
+    }
+
     /// PF-4：已知的卡插上后自动重扫 1,000 张未变化的照片，≤ 3 秒。
     /// 在合成库的副本里加一张 1,000 个文件的卡（放在本机 SSD 上），先导入，再计时重扫。
     @Test func rescanThousandUnchangedFiles() async throws {
