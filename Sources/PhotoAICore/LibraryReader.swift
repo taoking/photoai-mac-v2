@@ -276,43 +276,45 @@ public struct LibraryReader: Sendable {
 
     // MARK: - 预览
 
-    /// 需要生成预览、并且预览用的文件当前有现存位置的照片。
-    /// 返回每张照片可用的所有现存位置，由调用方挑在线的卷。
-    public func photosNeedingPreviews(limit: Int, onVolumes volumeIDs: [VolumeID]) throws -> [PreviewJob] {
+    /// 需要生成预览、并且在给定的（在线）卷上有现存位置的照片。
+    /// 每张照片列出所有可用的来源，JPEG 排在 RAW 前面（预览优先用 JPEG 生成）。
+    public func photosNeedingPreviews(limit: Int, onVolumes volumeIDs: [VolumeID], excluding: Set<PhotoID> = []) throws -> [PreviewJob] {
         guard !volumeIDs.isEmpty else { return [] }
         let volumeList = volumeIDs.map(String.init).joined(separator: ",")
-        var jobs: [PhotoID: PreviewJob] = [:]
-        var order: [PhotoID] = []
-        try db.query(
+        let candidates = try db.all(
             """
-            SELECT p.id, p.thumb_state, p.preview_state, l.volume_id, l.relative_path, f.kind
-            FROM photos p
-            JOIN files f ON f.id = p.preview_file_id
-            JOIN locations l ON l.file_id = f.id AND l.status = 'present'
+            SELECT p.id, p.thumb_state = 'pending', p.preview_state = 'pending' FROM photos p
             WHERE p.present_location_count > 0
               AND (p.thumb_state = 'pending' OR p.preview_state = 'pending')
-              AND l.volume_id IN (\(volumeList))
+              AND EXISTS (SELECT 1 FROM files f JOIN locations l ON l.file_id = f.id
+                          WHERE f.photo_id = p.id AND l.status = 'present' AND l.volume_id IN (\(volumeList)))
             ORDER BY p.capture_date DESC
             LIMIT ?;
             """,
-            [limit]
-        ) { row in
-            let id = row.int(0)
-            let source = PreviewJob.Source(volumeID: row.int(3), relativePath: row.text(4) ?? "")
-            if jobs[id] == nil {
-                order.append(id)
-                jobs[id] = PreviewJob(
-                    photoID: id,
-                    needsThumb: row.text(1) == PreviewState.pending.rawValue,
-                    needsPreview: row.text(2) == PreviewState.pending.rawValue,
-                    isRaw: row.text(5) == FileKind.raw.rawValue,
-                    sources: [source]
+            [limit + excluding.count]
+        ) { ($0.int(0), $0.int(1) != 0, $0.int(2) != 0) }
+        var jobs: [PreviewJob] = []
+        for (id, needsThumb, needsPreview) in candidates where !excluding.contains(id) {
+            guard jobs.count < limit else { break }
+            let sources = try db.all(
+                """
+                SELECT f.id, f.kind, l.volume_id, l.relative_path FROM files f
+                JOIN locations l ON l.file_id = f.id
+                WHERE f.photo_id = ? AND l.status = 'present' AND l.volume_id IN (\(volumeList));
+                """,
+                [id]
+            ) { row in
+                PreviewJob.Source(
+                    fileID: row.int(0),
+                    kind: FileKind(rawValue: row.text(1) ?? "") ?? .raw,
+                    volumeID: row.int(2),
+                    relativePath: row.text(3) ?? ""
                 )
-            } else {
-                jobs[id]?.sources.append(source)
             }
+            .sorted { $0.kind.previewPriority < $1.kind.previewPriority }
+            jobs.append(PreviewJob(photoID: id, needsThumb: needsThumb, needsPreview: needsPreview, sources: sources))
         }
-        return order.compactMap { jobs[$0] }
+        return jobs
     }
 
     public func pendingPreviewCount() throws -> Int {
@@ -378,6 +380,8 @@ public struct LibraryReader: Sendable {
 /// 一张照片的预览生成任务。
 public struct PreviewJob: Sendable, Equatable {
     public struct Source: Sendable, Equatable {
+        public var fileID: FileID
+        public var kind: FileKind
         public var volumeID: VolumeID
         public var relativePath: String
     }
@@ -385,6 +389,5 @@ public struct PreviewJob: Sendable, Equatable {
     public var photoID: PhotoID
     public var needsThumb: Bool
     public var needsPreview: Bool
-    public var isRaw: Bool
     public var sources: [Source]
 }

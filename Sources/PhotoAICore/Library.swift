@@ -134,12 +134,35 @@ public final class Library: @unchecked Sendable {
 
     // MARK: - 预览状态
 
-    func setPreviewStates(photoID: PhotoID, thumb: PreviewState?, preview: PreviewState?) throws {
-        if let thumb {
-            try db.run("UPDATE photos SET thumb_state = ? WHERE id = ?;", [thumb.rawValue, photoID])
+    /// 预览文件已写完并能解码之后才调用：在一个事务里把对应档位记为 `ready`，并记下用的是哪个文件。
+    public func markPreviewsReady(photoID: PhotoID, thumb: Bool, preview: Bool, sourceFileID: FileID) throws {
+        try db.transaction {
+            if thumb { try db.run("UPDATE photos SET thumb_state = 'ready' WHERE id = ?;", [photoID]) }
+            if preview { try db.run("UPDATE photos SET preview_state = 'ready' WHERE id = ?;", [photoID]) }
+            try db.run("UPDATE photos SET preview_file_id = ? WHERE id = ?;", [sourceFileID, photoID])
         }
-        if let preview {
-            try db.run("UPDATE photos SET preview_state = ? WHERE id = ?;", [preview.rawValue, photoID])
+    }
+
+    /// 原片能读但解码不了：记为 `failed`，不再反复重试。
+    public func markPreviewsFailed(photoID: PhotoID) throws {
+        try db.run(
+            """
+            UPDATE photos SET
+                thumb_state = CASE thumb_state WHEN 'pending' THEN 'failed' ELSE thumb_state END,
+                preview_state = CASE preview_state WHEN 'pending' THEN 'failed' ELSE preview_state END
+            WHERE id = ?;
+            """,
+            [photoID]
+        )
+    }
+
+    /// 文件缺失或解码失败的档位改回 `pending`，卷重新插上时续做。
+    public func resetPreviews(_ items: [(photoID: PhotoID, thumb: Bool, preview: Bool)]) throws {
+        try db.transaction {
+            for item in items {
+                if item.thumb { try db.run("UPDATE photos SET thumb_state = 'pending' WHERE id = ?;", [item.photoID]) }
+                if item.preview { try db.run("UPDATE photos SET preview_state = 'pending' WHERE id = ?;", [item.photoID]) }
+            }
         }
     }
 
