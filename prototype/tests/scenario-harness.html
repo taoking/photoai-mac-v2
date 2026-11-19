@@ -68,6 +68,28 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  goneOnDisk.set('BK',new Set([zp])); key('z');
  ok(!visible(P[zp])&&S.focus!==zp&&S.result.includes(S.focus)&&!S.result.includes(zp),'放大时发现缺失：照片隐藏，焦点移到邻近照片');
  P[zp].locations.forEach(l=>{if(l.vol==='BK')l.status='present'}); setView('grid'); recompute(); renderAll(); renderGrid();
+ // 观看：背景、边框、留白（V-1），⌘+ / ⌘−（V-2），停一下换原图（V-3）
+ setSource({type:'vol',id:'A'}); focusOnly(S.result[0]); setView('single');
+ const stageBg=()=>getComputedStyle(document.querySelector('#single .stage')).backgroundColor;
+ const simg=()=>document.querySelector('#single .img'), ssrc=()=>document.querySelector('#single .sbar .src').textContent;
+ ok(stageBg()==='rgb(41, 41, 41)'&&simg().classList.contains('framed'),'默认深灰背景、细边框和投影: '+stageBg());
+ ok(ssrc()==='预览'&&simg().classList.contains('soft'),'刚打开是预览');
+ await sleep(350); ok(ssrc()==='原图'&&!simg().classList.contains('soft'),'停 0.3 秒、卷在线：换上原图');
+ key('ArrowRight'); ok(ssrc()==='预览','翻页后先是预览');
+ const w0=simg().offsetWidth; setViewer({bg:'white',framed:false,margin:'wide'});
+ ok(stageBg()==='rgb(245, 245, 245)'&&!simg().classList.contains('framed'),'白背景、去掉边框');
+ ok(simg().offsetWidth<w0,'宽留白时照片变小: '+w0+' → '+simg().offsetWidth);
+ ok(document.querySelector('#menubar').textContent.includes('背景：白 ✓'),'显示菜单里勾上「白」');
+ setViewer({bg:'darkGray',framed:true,margin:'narrow'});
+ key('=',{metaKey:true}); ok(S.zoom&&S.zoomScale===0.5&&document.querySelector('.zoomnote').textContent.startsWith('50%'),'⌘+ 从适合窗口到 50%');
+ key('+',{metaKey:true,shiftKey:true}); ok(S.zoomScale===1,'⌘⇧= 也算 ⌘+：100%');
+ key('=',{metaKey:true}); key('=',{metaKey:true}); ok(S.zoomScale===2,'⌘+ 到 200% 为止');
+ key('-',{metaKey:true}); ok(S.zoomScale===1,'⌘− 到 100%');
+ key('-',{metaKey:true}); key('-',{metaKey:true}); ok(!S.zoom&&S.view==='single','⌘− 回到适合窗口');
+ key('z'); ok(S.zoom&&S.zoomScale===1,'Z 到 100%'); key('0',{metaKey:true}); ok(!S.zoom,'⌘0 适合窗口');
+ setView('grid'); setSource({type:'all'}); const off=S.result.find(id=>!isOnline(P[id]));
+ focusOnly(off); setView('single'); await sleep(350); ok(ssrc()==='离线'&&simg().classList.contains('soft'),'卷离线：一直是预览');
+ setView('grid');
  // 导出
  exportDialog(); ok(!!document.querySelector('#exOk'),'导出面板: '+document.querySelector('#exOk').textContent); closeModal();
  setSource({type:'vol',id:'B'}); exportDialog('result'); ok(document.querySelector('#exNeed').textContent.includes('离线'),'离线卷提示'); closeModal();
