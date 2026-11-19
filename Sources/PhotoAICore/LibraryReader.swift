@@ -85,6 +85,7 @@ public struct LibraryReader: Sendable {
         case .fileName:
             order = "p.base_name COLLATE NOCASE, p.capture_date"
         }
+        let labels = try photoLabels()
         return try db.all(
             """
             SELECT p.id, p.base_name, p.capture_date, p.width, p.height, p.rating, p.flag, p.thumb_state,
@@ -106,7 +107,8 @@ public struct LibraryReader: Sendable {
                 flag: Flag(rawValue: row.text(6) ?? "") ?? .none,
                 thumbState: PreviewState(rawValue: row.text(7) ?? "") ?? .pending,
                 hasRaw: row.int(8) != 0,
-                hasJPEG: row.int(9) != 0
+                hasJPEG: row.int(9) != 0,
+                labelIDs: labels[row.int(0)] ?? []
             )
         }
     }
@@ -202,6 +204,14 @@ public struct LibraryReader: Sendable {
         detail.extensions = kinds.map { $0.0.uppercased() }
         detail.summary.hasRaw = kinds.contains { $0.1 == FileKind.raw.rawValue }
         detail.summary.hasJPEG = kinds.contains { $0.1 == FileKind.jpeg.rawValue }
+        detail.summary.labelIDs = try db.all(
+            """
+            SELECT pl.label_id FROM photo_labels pl JOIN labels l ON l.id = pl.label_id
+            WHERE pl.photo_id = ? AND l.name != '' ORDER BY l.sort_order;
+            """,
+            [id]
+        ) { $0.int(0) }
+        detail.collectionNames = try collectionNames(of: id)
         detail.locations = try db.all(
             """
             SELECT l.volume_id, v.name, l.relative_path, l.status = 'present'

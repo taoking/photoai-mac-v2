@@ -86,11 +86,41 @@ public enum SyntheticLibrary {
                     }
                 }
                 try db.run("UPDATE photos SET present_location_count = ? WHERE id = ?;", [locationCount, photoID])
+                try addCullingMarks(db: db, photoID: photoID, generator: &generator)
+            }
+            // 三个收藏夹：小、中、大，PF-3（收藏夹）用。
+            for (name, size) in [("合成 · 精选 60", 60), ("合成 · 旅行 2000", 2_000), ("合成 · 大 20000", 20_000)] {
+                let collection = try library.createCollection(name: name)
+                let stride = max(1, options.photoCount / size)
+                for index in Swift.stride(from: 1, through: options.photoCount, by: stride).prefix(size) {
+                    try db.run(
+                        "INSERT INTO collection_members (collection_id, photo_id, added_at) VALUES (?, ?, ?);",
+                        [collection, index, now]
+                    )
+                }
             }
         }
 
         if options.withPreviewFiles {
             try writePreviewFiles(store: PreviewStore(root: paths.previews), count: options.photoCount, reader: library.reader)
+        }
+    }
+
+    /// 星级、标记、标签按大致真实的比例：多数照片没打星，约四分之一有标签。PF-8 用。
+    private static func addCullingMarks(db: Database, photoID: Int, generator: inout SplitMix) throws {
+        let roll = generator.next() % 100
+        let rating = roll < 55 ? 0 : roll < 65 ? 1 : roll < 75 ? 2 : roll < 87 ? 3 : roll < 96 ? 4 : 5
+        let flagRoll = generator.next() % 100
+        let flag = flagRoll < 8 ? "pick" : flagRoll < 20 ? "reject" : "none"
+        if rating > 0 || flag != "none" {
+            try db.run("UPDATE photos SET rating = ?, flag = ? WHERE id = ?;", [rating, flag, photoID])
+        }
+        if generator.next() % 4 == 0 {
+            // 标签 id 1–4 是默认的“经典 / 人像 / 风景 / 人文”。
+            try db.run("INSERT INTO photo_labels (photo_id, label_id) VALUES (?, ?);", [photoID, Int(generator.next() % 4) + 1])
+            if generator.next() % 5 == 0 {
+                try db.run("INSERT OR IGNORE INTO photo_labels (photo_id, label_id) VALUES (?, ?);", [photoID, Int(generator.next() % 4) + 1])
+            }
         }
     }
 

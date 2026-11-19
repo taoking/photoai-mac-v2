@@ -49,6 +49,44 @@ struct PerformanceTests {
         _ = try measure("照片所在卷（离线标记）") { try reader.photoVolumes().count }
     }
 
+    /// PF-3（收藏夹）：切换到收藏夹的查询，≤ 200 ms。
+    @Test func collectionQueries() throws {
+        let reader = try Library(paths: sourcePaths).makeReader()
+        let collections = try reader.collections()
+        #expect(collections.count >= 3)
+        for collection in collections {
+            let (median, _) = try measure("收藏夹 \(collection.name)") { try reader.photos(in: .collection(collection.id)).count }
+            #expect(median <= 200)
+        }
+        _ = try measure("收藏夹列表与张数") { try reader.collections().count }
+        _ = try measure("所有照片的标签") { try reader.photoLabels().count }
+    }
+
+    /// PF-8：对 10 万条重新筛选，≤ 100 ms。筛选在内存里做，不查数据库。
+    @Test func refilterHundredThousand() throws {
+        let reader = try Library(paths: sourcePaths).makeReader()
+        let photos = try reader.photos(in: .all)
+        var filters: [(String, PhotoFilter)] = []
+        var classicFive = PhotoFilter()
+        classicFive.toggleLabel(1)
+        classicFive.toggleStar(5)
+        filters.append(("经典 + ★5", classicFive))
+        var several = PhotoFilter()
+        several.toggleStar(3)
+        several.toggleLabel(1)
+        several.toggleLabel(2)
+        several.noLabel = true
+        several.toggleFlag(.pick)
+        several.toggleFlag(.none)
+        several.toggleKind(.rawPlusJPEG)
+        filters.append(("四类条件都有", several))
+        for (name, filter) in filters {
+            let (median, maximum) = measure("筛选 \(name)") { photos.filter(filter.matches).count }
+            #expect(median <= 100)
+            #expect(maximum <= 100)
+        }
+    }
+
     /// PF-4：已知的卡插上后自动重扫 1,000 张未变化的照片，≤ 3 秒。
     /// 在合成库的副本里加一张 1,000 个文件的卡（放在本机 SSD 上），先导入，再计时重扫。
     @Test func rescanThousandUnchangedFiles() async throws {
