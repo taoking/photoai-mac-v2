@@ -14,10 +14,6 @@ public struct OrphanPhoto: Sendable, Equatable, Identifiable {
     public var height: Int?
 
     public var isMarked: Bool { rating > 0 || flag == .pick || inCollection }
-    public var aspectRatio: Double {
-        guard let width, let height, width > 0, height > 0 else { return 1.5 }
-        return Double(width) / Double(height)
-    }
 }
 
 /// 按曾经所在的卷分组：照片最后一次被看到的那个位置所在的卷。

@@ -20,6 +20,12 @@ struct PhotoAIApp: App {
         .commands {
             PhotoCommands(model: model)
         }
+
+        Window("无卷关联照片", id: "orphans") {
+            OrphansWindow()
+                .environment(model)
+        }
+        .defaultSize(width: 820, height: 620)
     }
 }
 

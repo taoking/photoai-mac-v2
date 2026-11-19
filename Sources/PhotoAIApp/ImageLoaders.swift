@@ -16,6 +16,11 @@ final class ThumbnailLoader {
 
     func cached(_ id: PhotoID) -> NSImage? { cache.object(forKey: NSNumber(value: id)) }
 
+    /// 照片删掉后丢掉缓存（编号可能被新照片重新用上）。
+    func forget(_ ids: some Sequence<PhotoID>) {
+        for id in ids { cache.removeObject(forKey: NSNumber(value: id)) }
+    }
+
     func load(_ id: PhotoID, completion: @escaping (NSImage?) -> Void) {
         guard let store else { return completion(nil) }
         if waiting[id] != nil {
@@ -55,6 +60,11 @@ final class PreviewImageLoader {
     init() { cache.countLimit = 16 }
 
     func cached(_ id: PhotoID) -> NSImage? { cache.object(forKey: NSNumber(value: id)) }
+
+    /// 照片删掉后丢掉缓存（编号可能被新照片重新用上）。
+    func forget(_ ids: some Sequence<PhotoID>) {
+        for id in ids { cache.removeObject(forKey: NSNumber(value: id)) }
+    }
 
     func load(_ id: PhotoID, completion: @escaping (NSImage?) -> Void) {
         if let image = cached(id) { return completion(image) }

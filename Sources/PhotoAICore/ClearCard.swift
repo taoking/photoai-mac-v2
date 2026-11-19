@@ -327,6 +327,12 @@ public struct BackfillProgress: Sendable, Equatable {
     public var filesDone: Int
     public var fileCount: Int
     public var bytesDone: Int
+
+    public init(filesDone: Int, fileCount: Int, bytesDone: Int) {
+        self.filesDone = filesDone
+        self.fileCount = fileCount
+        self.bytesDone = bytesDone
+    }
 }
 
 /// 补副本：把缺副本的文件复制到用户选的卷（设计稿 §5）。
@@ -454,7 +460,8 @@ public struct Backfiller: Sendable {
         return report
     }
 
-    static let dateFormatter: DateFormatter = {
+    /// “补副本-日期”子文件夹用的日期（本地时间）。
+    public static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"

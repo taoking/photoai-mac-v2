@@ -70,6 +70,9 @@ struct SidebarView: View {
                             newName = volume.name
                             renaming = volume
                         }
+                        Divider()
+                        Button("清卡检查…") { model.beginClearCardCheck(volume.id) }
+                        Button("移除卷…") { model.requestRemoval(volume.id) }
                     }
                 }
             }
