@@ -131,6 +131,8 @@ public struct VolumeStats: Sendable, Equatable {
     /// 其中 480 和 1600 两档预览都已就绪的照片数，即“离线预览就绪”。
     public var previewReadyCount: Int
     public var incompleteDirectoryCount: Int
+    /// 有文件别处没有现存副本的照片数（按记录，离线卷上的副本也算），标题行的“N 张缺副本”。
+    public var missingCopyCount = 0
 }
 
 public struct ImportBatch: Sendable, Equatable, Identifiable {

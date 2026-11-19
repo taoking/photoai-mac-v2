@@ -287,7 +287,7 @@ enum ExportStop: Error {
 }
 
 /// 导出一张照片。同一张照片的 RAW 和 JPEG 在同一个目录里用同一个编号，免得配对被拆开。
-private struct PhotoExport {
+struct PhotoExport {
     let exporter: Exporter
     let request: ExportRequest
     /// 这张照片可能导出的全部文件（名字、大小），选编号时一起看。

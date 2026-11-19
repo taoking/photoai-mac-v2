@@ -177,6 +177,11 @@ public final class Library: @unchecked Sendable {
         path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
+    /// `dir` 是 `root` 本身或在它下面（相对卷根目录的路径；空字符串是整个卷）。
+    static func isDirectory(_ dir: String, inside root: String) -> Bool {
+        root.isEmpty || dir == root || dir.hasPrefix(root + "/")
+    }
+
     static func join(_ directory: String, _ name: String) -> String {
         directory.isEmpty ? name : directory + "/" + name
     }

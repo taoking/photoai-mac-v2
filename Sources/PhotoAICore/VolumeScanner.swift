@@ -27,10 +27,12 @@ public struct ScanSummary: Sendable, Equatable {
 
 public enum ScanError: Error, CustomStringConvertible {
     case volumeNotActive(VolumeID)
+    case outsideScanRoot(String)
 
     public var description: String {
         switch self {
         case .volumeNotActive(let id): "卷 \(id) 不存在或已移除"
+        case .outsideScanRoot(let dir): "「\(dir)」不在这个卷的扫描文件夹里"
         }
     }
 }
@@ -62,10 +64,14 @@ public struct VolumeScanner: Sendable {
 
     /// 扫描一个已挂载的卷。`isCancelled` 返回 true 时（取消、卷被拔出）在下一个文件批次前停下，
     /// 当前目录和之后的目录都记为没扫完。
+    ///
+    /// `subtree`：只扫这个目录和它下面的（补副本后登记副本用），必须在卷的扫描文件夹之内。
+    /// 结论只下在这棵子树里：别的目录保持上次的状态，也不更新整卷的“最后扫完”时间。
     @discardableResult
     public func scan(
         volumeID: VolumeID,
         mountURL: URL,
+        subtree: String? = nil,
         isCancelled: @escaping @Sendable () -> Bool = { Task.isCancelled },
         progress: (@Sendable (ScanSummary) -> Void)? = nil
     ) async throws -> ScanSummary {
@@ -75,7 +81,9 @@ public struct VolumeScanner: Sendable {
         let time = library.now()
         var summary = ScanSummary()
         var importBatchID: Int?
-        var queue = [volume.scanRoot]
+        let start = subtree.map(Library.normalizedDirectory) ?? volume.scanRoot
+        guard Library.isDirectory(start, inside: volume.scanRoot) else { throw ScanError.outsideScanRoot(start) }
+        var queue = [start]
         var visited: Set<String> = []
         var interruption: String?
 
@@ -186,12 +194,14 @@ public struct VolumeScanner: Sendable {
             summary.incompleteDirectories[dir] = reason
             visited.insert(dir)
         }
-        try library.markUnvisitedDirectoriesIncomplete(volumeID: volumeID, visited: visited, reason: reason)
+        try library.markUnvisitedDirectoriesIncomplete(volumeID: volumeID, visited: visited, under: subtree == nil ? nil : start, reason: reason)
         for (dir, state) in try library.reader.scanDirectoryStates(volume: volumeID)
         where state == "incomplete" && summary.incompleteDirectories[dir] == nil {
             summary.incompleteDirectories[dir] = reason
         }
-        summary.isComplete = try library.finishVolumeScan(volumeID: volumeID, importBatchID: importBatchID, at: time)
+        summary.isComplete = try library.finishVolumeScan(
+            volumeID: volumeID, importBatchID: importBatchID, at: time, wholeVolume: subtree == nil
+        )
         progress?(summary)
         return summary
     }

@@ -43,7 +43,12 @@ public struct LibraryReader: Sendable {
             "SELECT COUNT(*) FROM scan_dirs WHERE volume_id = ? AND state = 'incomplete';",
             [id]
         )
-        return VolumeStats(photoCount: counts.0, previewReadyCount: counts.1, incompleteDirectoryCount: incomplete)
+        return VolumeStats(
+            photoCount: counts.0,
+            previewReadyCount: counts.1,
+            incompleteDirectoryCount: incomplete,
+            missingCopyCount: try missingCopyCount(volume: id)
+        )
     }
 
     /// 每个在用卷上的可见照片数，侧栏用。
