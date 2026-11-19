@@ -94,44 +94,6 @@ public final class Library: @unchecked Sendable {
         }
     }
 
-    // MARK: - 选片字段（按字段写入）
-
-    public func setRating(_ rating: Int, for photoIDs: [PhotoID]) throws {
-        precondition((0...5).contains(rating))
-        try db.transaction {
-            for id in photoIDs {
-                try db.run("UPDATE photos SET rating = ? WHERE id = ?;", [rating, id])
-            }
-        }
-    }
-
-    public func setFlag(_ flag: Flag, for photoIDs: [PhotoID]) throws {
-        try db.transaction {
-            for id in photoIDs {
-                try db.run("UPDATE photos SET flag = ? WHERE id = ?;", [flag.rawValue, id])
-            }
-        }
-    }
-
-    // MARK: - 收藏夹（M1 只有最小的部分，M2 补全）
-
-    @discardableResult
-    public func createCollection(name: String) throws -> CollectionID {
-        Int(try db.insert("INSERT INTO collections (name, created_at) VALUES (?, ?);", [name, now()]))
-    }
-
-    public func addPhotos(_ photoIDs: [PhotoID], to collection: CollectionID) throws {
-        try db.transaction {
-            for id in photoIDs {
-                try db.run(
-                    "INSERT OR IGNORE INTO collection_members (collection_id, photo_id, added_at) VALUES (?, ?, ?);",
-                    [collection, id, now()]
-                )
-            }
-            try db.run("UPDATE collections SET last_used_at = ? WHERE id = ?;", [now(), collection])
-        }
-    }
-
     // MARK: - 预览状态
 
     /// 预览文件已写完并能解码之后才调用：在一个事务里把对应档位记为 `ready`，并记下用的是哪个文件。

@@ -18,7 +18,7 @@ struct PhotoAIApp: App {
         }
         .defaultSize(width: 1440, height: 900)
         .commands {
-            CommandGroup(replacing: .newItem) {}
+            PhotoCommands(model: model)
         }
     }
 }

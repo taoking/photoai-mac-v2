@@ -4,6 +4,7 @@ public typealias VolumeID = Int
 public typealias PhotoID = Int
 public typealias FileID = Int
 public typealias CollectionID = Int
+public typealias LabelID = Int
 
 /// 库里记录的一个卷。在线 / 离线不在这里：那是运行时状态，看卷有没有挂载。
 public struct VolumeRecord: Sendable, Equatable, Identifiable, Hashable {
@@ -39,6 +40,8 @@ public struct PhotoSummary: Sendable, Equatable, Identifiable {
     public var thumbState: PreviewState
     public var hasRaw: Bool
     public var hasJPEG: Bool
+    /// 按标签位置排好序。
+    public var labelIDs: [LabelID] = []
 
     /// 按天分组用：`yyyy-MM-dd`；没有拍摄时间的归到“日期未知”。
     public var day: String? { captureDate.map { String($0.prefix(10)) } }
@@ -70,6 +73,37 @@ public struct PhotoDetail: Sendable, Equatable {
     public var presentLocationCount: Int
     public var extensions: [String]
     public var locations: [Location]
+    /// 这张照片所在的收藏夹名字。
+    public var collectionNames: [String] = []
+}
+
+/// 一个标签位置。一共 9 个，`sortOrder` 0–8 决定快捷键：前 4 个对应 6–9，全部对应 ⌥1–⌥9。
+public struct LabelRecord: Sendable, Equatable, Identifiable, Hashable {
+    public let id: LabelID
+    /// 空字符串表示这个位置没用。
+    public var name: String
+    /// `#rrggbb`
+    public var color: String
+    public var sortOrder: Int
+
+    public var isInUse: Bool { !name.isEmpty }
+}
+
+public struct CollectionRecord: Sendable, Equatable, Identifiable, Hashable {
+    public let id: CollectionID
+    public var name: String
+    public var createdAt: Date
+    public var lastUsedAt: Date?
+    /// 可见的成员数（隐藏的照片仍是成员，但不计数、不显示）。
+    public var photoCount: Int
+
+    public init(id: CollectionID, name: String, createdAt: Date, lastUsedAt: Date?, photoCount: Int) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.lastUsedAt = lastUsedAt
+        self.photoCount = photoCount
+    }
 }
 
 /// 侧栏或命令行选的一组照片。

@@ -1,12 +1,13 @@
 import PhotoAICore
 import SwiftUI
 
-/// 侧栏：图库、时间、卷（信息架构 §3.1）。收藏夹、人物、地点在后面的阶段加。
+/// 侧栏：图库、时间、卷、收藏夹（信息架构 §3.1）。人物、地点在后面的阶段加。
 /// 已移除的卷和无卷关联照片不出现在侧栏。
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
     @State private var renaming: VolumeRecord?
     @State private var newName = ""
+    @State private var deletingCollection: CollectionRecord?
 
     var body: some View {
         @Bindable var model = model
@@ -72,8 +73,32 @@ struct SidebarView: View {
                     }
                 }
             }
+
+            Section {
+                ForEach(model.collections) { collection in
+                    HStack {
+                        Label(collection.name, systemImage: "folder")
+                        Spacer()
+                        Text(collection.photoCount.formatted()).foregroundStyle(.secondary)
+                    }
+                    .tag(SidebarItem.collection(collection.id))
+                    .contextMenu {
+                        Button("改名…") { model.activeSheet = .renameCollection(collection.id) }
+                        Button("删除收藏夹…") { deletingCollection = collection }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("收藏夹")
+                    Spacer()
+                    Button { model.beginNewCollection(adding: []) } label: { Image(systemName: "plus") }
+                        .buttonStyle(.borderless)
+                        .help("新建收藏夹")
+                }
+            }
         }
         .listStyle(.sidebar)
+        .modifier(DeleteCollectionConfirmation(collection: $deletingCollection))
         .alert("给卷改名", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("名字", text: $newName)
             Button("取消", role: .cancel) { renaming = nil }
