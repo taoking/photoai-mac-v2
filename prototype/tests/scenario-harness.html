@@ -63,9 +63,34 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  // 文件又放回去、重扫：位置恢复为现存（这里直接还原，后面的计数不受影响）
  gone.forEach(id=>P[id].locations.forEach(l=>{if(l.vol==='BK')l.status='present'})); recompute(); renderAll(); renderGrid();
  ok(gone.every(id=>visible(P[id])),'恢复后重新可见');
+ // 100% 放大时发现唯一的原片不在：照片移到无卷关联，焦点落到邻近照片
+ setSource({type:'month',id:'2026-05'}); const zp=S.result[3]; focusOnly(zp); setView('single');
+ goneOnDisk.set('BK',new Set([zp])); key('z');
+ ok(!visible(P[zp])&&S.focus!==zp&&S.result.includes(S.focus)&&!S.result.includes(zp),'放大时发现缺失：照片隐藏，焦点移到邻近照片');
+ P[zp].locations.forEach(l=>{if(l.vol==='BK')l.status='present'}); setView('grid'); recompute(); renderAll(); renderGrid();
  // 导出
  exportDialog(); ok(!!document.querySelector('#exOk'),'导出面板: '+document.querySelector('#exOk').textContent); closeModal();
  setSource({type:'vol',id:'B'}); exportDialog('result'); ok(document.querySelector('#exNeed').textContent.includes('离线'),'离线卷提示'); closeModal();
+ // 清卡按文件核对
+ const vA0=volById('A');
+ const rawOnlyN=photos.filter(p=>visible(p)&&p.locations.some(l=>l.vol==='A'&&isPresent(l))&&p.kind==='RAW+JPG'&&missingParts(p,'A').join()==='RAW').length;
+ ok(rawOnlyN===40,'卡A 有 40 张只缺 RAW（备份盘只有 JPEG）: '+rawOnlyN);
+ clearCardCheck(vA0); let txt=document.querySelector('.modal .mb').textContent;
+ ok(txt.includes('缺的是 RAW')&&!txt.includes('可以清空'),'清卡：注明缺 RAW，不显示可以清空');
+ closeModal();
+ volById('BK').online=false; clearCardCheck(vA0); txt=document.querySelector('.modal .mb').textContent;
+ ok(txt.includes('只有离线记录')&&!txt.includes('可以清空'),'备份盘离线：列为只有离线记录，不显示可以清空'); closeModal(); volById('BK').online=true;
+ // 导出：第一个位置读不到，改用第二个在线副本
+ const two=photos.find(p=>visible(p)&&p.locations.filter(l=>isPresent(l)&&volById(l.vol).online).length===2&&!p.locations.some(l=>l.parts));
+ goneOnDisk.set('A',new Set([two.id])); S.sel=new Set([two.id]); exportDialog('sel'); document.querySelector('#exOk').click();
+ ok(two.locations.find(l=>l.vol==='A').status==='historical'&&visible(two),'第一个位置读不到时改用第二个副本，照片仍可见');
+ ok(document.querySelector('#toast').textContent.includes('已从其他在线副本导出'),'提示改用了其他副本');
+ // 导出面板保留“跳过离线卷”的选择
+ setSource({type:'vol',id:'B'}); exportDialog('result'); const sk=document.querySelector('#exSkip'); sk.checked=false; sk.dispatchEvent(new Event('change',{bubbles:true}));
+ ok(document.querySelector('#exSkip').checked===false&&document.querySelector('#exOk').textContent.includes('插入'),'取消勾选后保持不勾选'); closeModal();
+ // 搜索：2026-08 是日期，1926-1950 是编号
+ ok(parseSearch('2026-08')[0].label.startsWith('日期'),'2026-08 解析为日期: '+parseSearch('2026-08')[0].label);
+ ok(parseSearch('1926-1950')[0].label.startsWith('编号'),'1926-1950 解析为编号');
  // 清卡 + 移除
  const vA=volById('A'); const ncA=photos.filter(p=>visible(p)&&p.locations.some(l=>l.vol==='A'&&isPresent(l))&&noOtherCopy(p,'A')).length;
  ok(ncA===250,'卡A 无副本 250: '+ncA);
@@ -94,7 +119,18 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  simulateInsert(); document.querySelector('#bnAdd').click(); document.querySelector('#vOk').click();
  await sleep(12000); ok(volById('E')&&S.tasks===null&&sourcePhotos({type:'vol',id:'E'}).length===240,'模拟导入完成');
  renderView(); setView('single'); ok(!!document.querySelector('#single .img'),'单张渲染');
+ setView('grid');
+ // 补副本：源读不到的不登记；补齐后才显示可以清空
+ const vC=volById('C'); togglePlug(vC);
+ const cNo=photos.filter(p=>visible(p)&&p.locations.some(l=>l.vol==='C'&&isPresent(l))&&noOtherCopy(p,'C'));
+ goneOnDisk.set('C',new Set(cNo.slice(0,3).map(p=>p.id)));
+ clearCardCheck(vC); document.querySelector('#copyNc').click(); await sleep(10);
+ ok(cNo.slice(0,3).every(p=>!p.locations.some(l=>l.vol==='BK')),'源读不到的 3 张没有登记副本');
+ ok(cNo.slice(3).every(p=>p.locations.some(l=>l.vol==='BK'&&isPresent(l))),'其余 '+(cNo.length-3)+' 张补副本已登记');
+ ok(document.querySelector('.modal .mb').textContent.includes('可以清空'),'全部核实后才显示可以清空');
+ closeModal();
 }catch(e){out.push('EXC '+e.message+' '+e.stack)}
+ if(window.__selfTestFail) out.push('FAIL 自检：故意失败的断言');
  out.push('ERRORS: '+JSON.stringify(__errs));
  const pre=document.createElement('pre');pre.id='__out';pre.textContent=out.join('\n');document.body.appendChild(pre);
  document.title='DONE';

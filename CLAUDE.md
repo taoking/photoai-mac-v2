@@ -12,7 +12,7 @@ next step is milestone M1 in `docs/计划.md`.
 Read `交接.md` first: current step, the concrete next step, which v1 files are worth consulting, the
 document map, and the rules that are easiest to break. The authoritative design is
 `docs/设计稿.md`; when it conflicts with the detail docs in `docs/`, the design doc wins and the
-detail doc gets corrected.
+detail doc gets corrected. External review reports and how each finding was resolved live in `docs/审查/`.
 
 ## Keeping the docs alive
 
@@ -33,8 +33,8 @@ the user merges. Performance targets PF-1…PF-12 in `docs/计划.md` are accept
 `prototype/index.html` is a single self-contained file (vanilla JS, no network, mock data) and is the
 interaction reference for the native app. Open it with `open prototype/index.html`. After changing
 it, run `prototype/tests/run.sh`, which injects `tests/scenario-harness.html` into the page, drives the
-typical culling scenario in headless Chrome and prints PASS/FAIL lines; extend the harness when adding
-interactions.
+typical culling scenario in headless Chrome, prints PASS/FAIL lines and exits non-zero on any failure
+(`--self-test` injects a deliberate failure to prove that); extend the harness when adding interactions.
 
 ## Conventions
 

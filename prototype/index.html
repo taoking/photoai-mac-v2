@@ -355,7 +355,12 @@ const tripA = genTrip({ vol: 'A', count: 700, start: '2026-08-10', days: 8, plac
 const tripB = genTrip({ vol: 'B', count: 260, start: '2026-10-03', days: 4, places: ['东京 · 浅草', '东京 · 涩谷', '镰仓'], startNo: 8800, hues: [330, 10, 220], batch: batchSeq++, trip: '2026-10 东京' });
 
 // 备份盘 2 上还有：新疆前 450 张、旧卡 C 的前 60 张、卡 D 的前 20 张。
-tripA.slice(0, 450).forEach(p => p.locations.push({ vol: 'BK', path: `照片/2026-08 新疆/${p.name}`, status: 'present' }));
+// 其中 40 张 RAW+JPG 在备份盘上只有 JPG：按照片看“有副本”，按文件看 RAW 只在卡上。
+let jpgOnly = 0;
+tripA.slice(0, 450).forEach(p => {
+  const partial = p.kind === 'RAW+JPG' && jpgOnly < 40 && (jpgOnly++, true);
+  p.locations.push({ vol: 'BK', path: `照片/2026-08 新疆/${p.name}`, status: 'present', ...(partial ? { parts: ['JPG'] } : {}) });
+});
 tripC.slice(0, 60).forEach(p => p.locations.push({ vol: 'BK', path: `照片/2025-11 杭州/${p.name}`, status: 'present' }));
 tripD.slice(0, 20).forEach(p => p.locations.push({ vol: 'BK', path: `照片/2026-06 上海/${p.name}`, status: 'present' }));
 
@@ -380,7 +385,18 @@ const isPresent = l => l.status === 'present' && volById(l.vol).status === 'acti
 const visible = p => p.locations.some(isPresent);
 const presentLocs = p => p.locations.filter(isPresent);
 const isOnline = p => presentLocs(p).some(l => volById(l.vol).online);
+// 副本按文件算：RAW 和 JPEG 各是一个文件。位置可以只含其中一部分（比如备份盘上只有 JPG）。
+const partsOf = p => p.kind === 'RAW+JPG' ? ['RAW', 'JPG'] : [p.kind];
+const locParts = (l, p) => l.parts || partsOf(p);
+// 卡上有、但别处没有现存副本的文件。
+function missingParts(p, volId) {
+  const here = new Set(p.locations.filter(l => l.vol === volId && isPresent(l)).flatMap(l => locParts(l, p)));
+  const elsewhere = new Set(p.locations.filter(l => l.vol !== volId && isPresent(l)).flatMap(l => locParts(l, p)));
+  return [...here].filter(k => !elsewhere.has(k));
+}
+// 整张照片在别处一个现存位置都没有：移除这个卷后它会进入“无卷关联照片”。
 function noOtherCopy(p, volId) { return !p.locations.some(l => isPresent(l) && l.vol !== volId); }
+const partName = k => k === 'RAW' ? 'RAW' : 'JPEG';
 function inAnyColl(p) { return collections.some(c => c.ids.has(p.id)); }
 
 // ---------- 状态 ----------
@@ -552,9 +568,9 @@ function renderHead() {
   let h = `<h1>${esc(sourceTitle())}</h1>`;
   if (src.type === 'vol') {
     const v = volById(src.id);
-    const nc = sourcePhotos(src).filter(p => noOtherCopy(p, v.id)).length;
+    const nc = sourcePhotos(src).filter(p => missingParts(p, v.id).length).length;
     h += `<span class="meta" title="${v.capacity} · 扫描 ${esc(v.root)}/ · 上次扫描 ${esc(v.lastScan)}"><span class="dot ${v.online ? 'online' : 'offline'}" style="display:inline-block;width:7px;height:7px;border-radius:50%"></span>${v.online ? '在线' : '离线'}</span>`;
-    if (nc) h += `<span class="warn" data-act="check" title="点击做清卡检查">${nc.toLocaleString()} 张无副本</span>`;
+    if (nc) h += `<span class="warn" data-act="check" title="按文件核对；点击做清卡检查">${nc.toLocaleString()} 张缺副本</span>`;
   }
   if (src.type === 'search') h += (S.search || []).map((t, i) => `<span class="chip">${esc(t.label)}<span class="x" data-si="${i}">×</span></span>`).join('');
   const sum = filterSummary();
@@ -791,9 +807,8 @@ function renderSingle() {
   if (Date.now() < S.barUntil) scheduleBarHide();
 }
 function zoomNote(p, online, needVol) {
+  if (!presentLocs(p).length) return '没有现存原片：只能放大 1600 预览';
   if (!online) return `卷离线：只能放大 1600 预览；看原图请插入 ${esc(needVol)}`;
-  const loc = presentLocs(p).find(l => volById(l.vol).online);
-  if (isGone(p, loc.vol)) return `原片已不在「${esc(volById(loc.vol).name)}」上：只能放大 1600 预览。重新扫描这个卷后位置会更新`;
   return '100%：正在读取原文件（原型）';
 }
 // 信息条：鼠标移动或刚打完星、标签时显示 2 秒，之后淡出，画面全部留给照片。
@@ -1114,7 +1129,13 @@ document.addEventListener('keydown', e => {
     case 'Escape': if (S.focusMode) setFocusMode(false); else setView('grid'); break;
     case 'f': case 'F': if (S.view !== 'grid') setFocusMode(); else toast('专注模式用于单张和比较视图'); break;
     case '\\': toggleFilterbar(); break;
-    case 'z': case 'Z': if (S.view !== 'grid') { S.zoom = !S.zoom; renderView(); } break;
+    case 'z': case 'Z': if (S.view !== 'grid') {
+        if (!S.zoom && S.view === 'single') {
+          const p = P[S.focus]; const loc = presentLocs(p).find(l => volById(l.vol).online && isGone(p, l.vol));
+          if (loc) { const name = volById(loc.vol).name; const orphaned = discoveredGone(loc.vol, [p.id]);
+            toast(`原片已不在「${name}」上：位置改为历史${orphaned ? '，这张照片已没有现存位置，移到「无卷关联照片」' : ''}`); if (orphaned) break; }
+        }
+        S.zoom = !S.zoom; renderView(); } break;
     case 'i': case 'I': if (S.view === 'single') { S.info = !S.info; renderSingle(); } break;
     case 'b': if (S.lastColl && collById(S.lastColl)) addToCollection(S.lastColl, targetIds()); else addToCollectionDialog(); break;
     case 'B': addToCollectionDialog(); break;
@@ -1131,10 +1152,6 @@ function parseSearch(q) {
     const lens = LENS_TOKENS.find(x => t.toLowerCase() === x.toLowerCase());
     if (lens) return { label: `镜头：${t}`, test: p => p.lens.includes(lens) };
     let m;
-    if ((m = t.match(/^(?:DSC)?0*(\d{1,5})(?:-0*(\d{1,5}))?(?:\.\w+)?$/i))) {
-      const a = +m[1], b = m[2] ? +m[2] : a;
-      return { label: m[2] ? `编号 ${a}–${b}` : `编号 ${a}`, test: p => p.no >= Math.min(a, b) && p.no <= Math.max(a, b) };
-    }
     if ((m = t.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/))) {
       const pre = `${m[1]}-${m[2].padStart(2, '0')}${m[3] ? '-' + m[3].padStart(2, '0') : ''}`;
       return { label: `日期：${pre}`, test: p => dayKey(p.ts).startsWith(pre) };
@@ -1142,6 +1159,11 @@ function parseSearch(q) {
     if ((m = t.match(/^(\d{1,2})月(?:(\d{1,2})日?)?$/))) {
       const mm = m[1].padStart(2, '0'), dd = m[2] ? m[2].padStart(2, '0') : null;
       return { label: `日期：${+mm} 月${dd ? +dd + ' 日' : ''}`, test: p => { const k = dayKey(p.ts); return k.slice(5, 7) === mm && (!dd || k.slice(8) === dd); } };
+    }
+    // 编号放在日期之后判断，否则 2026-08 会被当成编号范围。
+    if ((m = t.match(/^(?:DSC)?0*(\d{1,5})(?:-0*(\d{1,5}))?(?:\.\w+)?$/i))) {
+      const a = +m[1], b = m[2] ? +m[2] : a;
+      return { label: m[2] ? `编号 ${a}–${b}` : `编号 ${a}`, test: p => p.no >= Math.min(a, b) && p.no <= Math.max(a, b) };
     }
     const lab = labels.find(l => l.name && l.name === t);
     if (lab) return { label: `标签：${t}`, test: p => p.labels.has(lab.id) };
@@ -1242,26 +1264,39 @@ function exportDialog(defaultRange) {
     const ids = () => { const r = m.querySelector('input[name=r]:checked').value;
       if (r === 'sel') return [...S.sel]; if (r === 'result') return [...S.result];
       const c = collById(+m.querySelector('#exColl').value); return c ? [...c.ids].filter(id => P[id] && visible(P[id])) : []; };
-    const update = () => {
+    // 用户在面板里的选择要保持：每次刷新前先读回“跳过离线卷”的勾选状态。
+    let skip = true;
+    const plan = () => {
       const list = ids().map(id => P[id]);
       const vols = {}; let offline = 0;
-      list.forEach(p => { const on = presentLocs(p).find(l => volById(l.vol).online); if (on) vols[on.vol] = (vols[on.vol] || 0) + 1; else { offline++; const l = presentLocs(p)[0]; if (l) vols[l.vol + '!'] = (vols[l.vol + '!'] || 0) + 1; } });
+      list.forEach(p => { const on = presentLocs(p).filter(l => volById(l.vol).online); if (on.length) vols[on[0].vol] = (vols[on[0].vol] || 0) + 1; else { offline++; const l = presentLocs(p)[0]; if (l) vols[l.vol + '!'] = (vols[l.vol + '!'] || 0) + 1; } });
+      return { list, vols, offline };
+    };
+    const update = () => {
+      const prev = m.querySelector('#exSkip'); if (prev) skip = prev.checked;
+      const { list, vols, offline } = plan();
       m.querySelector('#exNeed').innerHTML = `<div class="t">需要的卷</div>${Object.entries(vols).map(([k, n]) => { const off = k.endsWith('!'); const v = volById(k.replace('!', ''));
         return `<div class="loc"><span class="dot ${off ? 'offline' : 'online'}" style="width:8px;height:8px;border-radius:50%;display:inline-block"></span>${esc(v.name)} · ${n} 张${off ? ' <span style="color:var(--warn)">离线，请插入</span>' : ''}</div>`; }).join('') || '<div class="muted">—</div>'}
-        ${offline ? `<label class="opt"><input type="checkbox" id="exSkip" checked>跳过离线卷上的 ${offline} 张，只导出在线的 ${list.length - offline} 张</label>` : ''}`;
-      m.querySelector('#exOk').textContent = `导出 ${list.length - (offline && m.querySelector('#exSkip')?.checked !== false ? offline : 0)} 张`;
+        ${offline ? `<label class="opt"><input type="checkbox" id="exSkip" ${skip ? 'checked' : ''}>跳过离线卷上的 ${offline} 张，只导出在线的 ${list.length - offline} 张</label>` : ''}`;
+      m.querySelector('#exOk').textContent = offline && !skip ? `插入离线卷后导出 ${list.length} 张` : `导出 ${list.length - offline} 张`;
     };
     m.addEventListener('change', update); update();
     m.querySelector('#exOk').onclick = () => {
-      const skip = m.querySelector('#exSkip')?.checked !== false;
-      const list = ids().map(id => P[id]).map(p => [p, presentLocs(p).find(l => volById(l.vol).online)]).filter(([p, l]) => l || !skip);
-      // 读不到的原片：这张导出失败、单独列出，并把这个位置改成历史位置。其余照片照常导出。
-      const failed = list.filter(([p, l]) => l && isGone(p, l.vol));
-      const byVol = {}; failed.forEach(([p, l]) => (byVol[l.vol] ??= []).push(p.id));
-      Object.entries(byVol).forEach(([vid, ids]) => markGone(vid, ids));
+      const { list, offline } = plan();
+      if (offline && !skip) { toast('还有照片只在离线卷上：插入列出的卷后再导出，或勾选“跳过离线卷”'); return; }
+      // 每个文件依次尝试所有在线位置；读不到的位置改为历史，都读不到才算失败。
+      let done = 0; const failed = []; const goneBy = {};
+      list.forEach(p => {
+        const cands = presentLocs(p).filter(l => volById(l.vol).online);
+        if (!cands.length) return;
+        const readable = cands.find(l => !isGone(p, l.vol));
+        cands.filter(l => isGone(p, l.vol)).forEach(l => (goneBy[l.vol] ??= []).push(p.id));
+        if (readable) done++; else failed.push(p);
+      });
       closeModal();
-      toast(`导出 ${list.length - failed.length} 张到 ~/Pictures/精修（原型）${failed.length ? `；${failed.length} 张原片已不在：${failed.map(([p]) => p.name).join('、')}，位置已改为历史` : ''}`);
-      if (failed.length) { renderAll(); renderGrid(); }
+      const triedOther = Object.values(goneBy).flat().length - failed.length;
+      Object.entries(goneBy).forEach(([vid, ids]) => discoveredGone(vid, ids));
+      toast(`导出 ${done} 张到 ~/Pictures/精修（原型）${triedOther > 0 ? `；${triedOther} 张的第一个位置读不到，已从其他在线副本导出` : ''}${failed.length ? `；${failed.length} 张所有在线位置都读不到：${failed.map(p => p.name).join('、')}` : ''}`);
     };
   });
 }
@@ -1269,32 +1304,48 @@ function exportDialog(defaultRange) {
 // ---------- 卷：清卡检查、移除、改名 ----------
 function clearCardCheck(v) {
   const ps = photos.filter(p => visible(p) && p.locations.some(l => l.vol === v.id && isPresent(l)));
-  // 副本信息来自上次扫描，可能过时：在线卷上的副本现场核对一下文件还在不在（只查这些文件，很快）；
-  // 离线卷上的副本没法核对，单独标出来。核对时发现已经不在的副本，顺手改成历史位置。
-  let verified = 0, unverified = 0; const goneCopies = {};
-  ps.forEach(p => {
-    const others = p.locations.filter(l => isPresent(l) && l.vol !== v.id);
-    const onlineOk = others.filter(l => volById(l.vol).online && !isGone(p, l.vol));
-    others.filter(l => volById(l.vol).online && isGone(p, l.vol)).forEach(l => (goneCopies[l.vol] ??= []).push(p.id));
-    if (onlineOk.length) verified++; else if (others.some(l => !volById(l.vol).online)) unverified++;
-  });
+  // 按文件核对：卡上每个文件归入“已核实 / 只有离线记录 / 缺副本”之一。
+  // 在线卷上的副本当场确认还在（原型里查 goneOnDisk），发现不在的顺手改为历史位置。
+  const goneCopies = {};
+  ps.forEach(p => p.locations.filter(l => isPresent(l) && l.vol !== v.id && volById(l.vol).online && isGone(p, l.vol))
+    .forEach(l => (goneCopies[l.vol] ??= []).push(p.id)));
   const goneN = Object.values(goneCopies).reduce((a, b) => a + b.length, 0);
   Object.entries(goneCopies).forEach(([vid, ids]) => markGone(vid, ids));
-  const nc = ps.filter(p => noOtherCopy(p, v.id));
+  let files = 0, verified = 0, offlineOnly = 0, missing = 0;
+  const missingPhotos = [], offlineVols = new Set();
+  ps.forEach(p => {
+    const here = new Set(p.locations.filter(l => l.vol === v.id && isPresent(l)).flatMap(l => locParts(l, p)));
+    const lack = [];
+    here.forEach(k => {
+      files++;
+      const copies = p.locations.filter(l => l.vol !== v.id && isPresent(l) && locParts(l, p).includes(k));
+      if (copies.some(l => volById(l.vol).online)) verified++;
+      else if (copies.length) { offlineOnly++; copies.forEach(l => offlineVols.add(volById(l.vol).name)); }
+      else { missing++; lack.push(k); }
+    });
+    if (lack.length) missingPhotos.push([p, lack]);
+  });
+  const rawOnly = missingPhotos.filter(([, lack]) => lack.length === 1 && lack[0] === 'RAW').length;
+  const pending = ps.filter(p => p.preview !== 'done').length;
+  const allClear = missing === 0 && offlineOnly === 0 && pending === 0;
+  const nc = missingPhotos.map(([p]) => p);
   const important = p => p.rating > 0 || p.flag === 'pick' || inAnyColl(p);
   const imp = nc.filter(important);
   let onlyImp = imp.length > 0;
   openModal(`<div class="mh">清卡检查：${esc(v.name)}</div><div class="mb">
-    <div>这个卷上有 <b>${ps.length.toLocaleString()}</b> 张照片：</div>
-    ${goneN ? `<div class="loc" style="color:var(--warn)">核对时发现 ${goneN} 张照片在其他卷上的副本已经不在，已按没有副本计算</div>` : ''}
-    <div class="loc">✅ ${verified.toLocaleString()} 张在在线卷上有副本（已现场核对文件还在）</div>
-    ${unverified ? `<div class="loc">☑️ ${unverified.toLocaleString()} 张的副本只在离线卷上：按上次扫描结果计算，没法现场核对</div>` : ''}
-    <div class="loc">${nc.length ? '⚠️' : '✅'} <b>${nc.length.toLocaleString()}</b> 张没有其他副本${nc.length ? `，其中 ${nc.filter(p => p.rating > 0).length} 张已打星、${nc.filter(p => p.flag === 'pick').length} 张已 Pick、${nc.filter(inAnyColl).length} 张在收藏夹里` : ''}</div>
-    ${nc.length ? `<label class="opt" style="margin-top:8px"><input type="checkbox" id="onlyImp" ${onlyImp ? 'checked' : ''}>只看已打星 / Pick / 在收藏夹里的</label><div class="minigrid" id="ncGrid"></div>` : '<p>可以放心清空这张卡。</p>'}
-    <p class="muted">移除卷只影响软件里的记录：照片、星级、标签、收藏夹和预览都保留；没有其他副本的照片会从常规列表隐藏，进入「无卷关联照片」。卡上的文件不会被动。</p></div>
-    <div class="mf">${nc.length ? `<button class="btn left" id="copyNc" ${v.online ? '' : 'disabled title="卷离线，插上后才能复制"'}>复制缺副本照片到…</button>` : ''}<button class="btn" data-close>关闭</button><button class="btn ${nc.length ? 'danger' : 'primary'}" id="rmV">${nc.length ? '仍然移除卷…' : '移除卷…'}</button></div>`, m => {
-    const draw = () => { const g = m.querySelector('#ncGrid'); if (!g) return; const list = (onlyImp ? imp : nc).slice(0, 160);
-      g.innerHTML = list.map(p => `<div class="mc" style="width:${Math.round(54 * p.w / p.h)}px;background:${phStyle(p)}" title="${p.name}">${badges(p, true)}</div>`).join('') + ((onlyImp ? imp : nc).length > 160 ? `<span class="muted">… 还有 ${(onlyImp ? imp : nc).length - 160} 张</span>` : ''); };
+    <div>${ps.length.toLocaleString()} 张照片、${files.toLocaleString()} 个文件（按文件核对，RAW 和 JPEG 分开）：</div>
+    ${goneN ? `<div class="loc" style="color:var(--warn)">核对时发现 ${goneN} 张照片在其他卷上的副本已经不在，已按缺副本计算</div>` : ''}
+    <div class="loc">✅ ${verified.toLocaleString()} 个文件已核实：在线卷上有副本，刚确认还在</div>
+    ${offlineOnly ? `<div class="loc">☑️ ${offlineOnly.toLocaleString()} 个文件只有离线记录：副本在「${[...offlineVols].map(esc).join('、')}」上，按上次扫描结果，没法当场核对；插上后再检查一次</div>` : ''}
+    ${missing ? `<div class="loc">⚠️ <b>${missing.toLocaleString()}</b> 个文件缺副本，涉及 ${nc.length.toLocaleString()} 张照片${rawOnly ? `（其中 ${rawOnly} 张缺的是 RAW：别处只有 JPEG）` : ''}；其中 ${nc.filter(p => p.rating > 0).length} 张已打星、${nc.filter(p => p.flag === 'pick').length} 张已 Pick、${nc.filter(inAnyColl).length} 张在收藏夹里</div>` : ''}
+    ${pending ? `<div class="loc">⏳ ${pending.toLocaleString()} 张照片的离线预览还没生成完：现在移除，它们在本机只剩缩略图甚至没有预览</div>` : ''}
+    ${allClear ? '<p><b>所有文件都已核实、预览都已就绪，可以清空这张卡。</b></p>' : ''}
+    ${nc.length ? `<label class="opt" style="margin-top:8px"><input type="checkbox" id="onlyImp" ${onlyImp ? 'checked' : ''}>只看已打星 / Pick / 在收藏夹里的</label><div class="minigrid" id="ncGrid"></div>` : ''}
+    <p class="muted">移除卷只影响软件里的记录：照片、星级、标签、收藏夹和预览都保留；别处一个副本都没有的照片会从常规列表隐藏，进入「无卷关联照片」。卡上的文件不会被动。</p></div>
+    <div class="mf">${nc.length ? `<button class="btn left" id="copyNc" ${v.online ? '' : 'disabled title="卷离线，插上后才能复制"'}>补副本到…</button>` : ''}<button class="btn" data-close>关闭</button><button class="btn ${allClear ? 'primary' : 'danger'}" id="rmV">${allClear ? '移除卷…' : '仍然移除卷…'}</button></div>`, m => {
+    const lackOf = new Map(missingPhotos.map(([p, lack]) => [p.id, lack]));
+    const draw = () => { const g = m.querySelector('#ncGrid'); if (!g) return; const all = onlyImp ? imp : nc; const list = all.slice(0, 160);
+      g.innerHTML = list.map(p => `<div class="mc" style="width:${Math.round(54 * p.w / p.h)}px;background:${phStyle(p)}" title="${p.name} 缺 ${lackOf.get(p.id).map(partName).join(' + ')}">${badges(p, true)}${lackOf.get(p.id).length === 1 && partsOf(p).length === 2 ? `<span class="b kind">缺 ${partName(lackOf.get(p.id)[0])}</span>` : ''}</div>`).join('') + (all.length > 160 ? `<span class="muted">… 还有 ${all.length - 160} 张</span>` : ''); };
     draw();
     const oi = m.querySelector('#onlyImp'); if (oi) oi.onchange = () => { onlyImp = oi.checked; draw(); };
     const cp = m.querySelector('#copyNc');
@@ -1302,18 +1353,30 @@ function clearCardCheck(v) {
       const targets = volumes.filter(x => x.status === 'active' && x.id !== v.id && x.online);
       if (!targets.length) return toast('没有其他在线的卷可以复制过去');
       const t = targets[0];
-      nc.forEach(p => p.locations.push({ vol: t.id, path: `${t.root}/从${v.name}补副本/${p.name}`, status: 'present' }));
-      closeModal(); toast(`已把 ${nc.length} 张复制到「${t.name}」并重扫，它们现在有副本了（原型）`); renderAll(); clearCardCheck(v);
+      // 补副本：保留原文件名，同一张照片的文件放同一目录；目标有同名文件时换新子目录（原型不模拟冲突）。
+      // 源文件读不到的不登记、单独报告，并把源位置改为历史。复制校验通过后才登记副本。
+      const ok = [], failed = [];
+      missingPhotos.forEach(([p, lack]) => {
+        if (isGone(p, v.id)) { failed.push(p); return; }
+        p.locations.push({ vol: t.id, path: `${t.root}/补副本-2026-11-19/${p.name}`, status: 'present', parts: lack });
+        ok.push([p, lack]);
+      });
+      if (failed.length) markGone(v.id, failed.map(p => p.id));
+      const nFiles = ok.reduce((a, [, lack]) => a + lack.length, 0);
+      closeModal();
+      toast(`补副本到「${t.name}」：${nFiles} 个文件复制并校验通过，已重扫登记${failed.length ? `；${failed.length} 张的源文件已读不到（${failed.map(p => p.name).join('、')}），没有登记，源位置改为历史` : ''}（原型）`);
+      recompute(); renderAll(); renderGrid(); renderView(); clearCardCheck(v);
     };
-    m.querySelector('#rmV').onclick = () => { closeModal(); removeVolumeFlow(v, nc.length); };
+    m.querySelector('#rmV').onclick = () => { closeModal(); removeVolumeFlow(v); };
   }, true);
 }
-async function removeVolumeFlow(v, ncKnown) {
+async function removeVolumeFlow(v) {
   const ps = photos.filter(p => visible(p) && p.locations.some(l => l.vol === v.id && isPresent(l)));
-  const nc = ncKnown ?? ps.filter(p => noOtherCopy(p, v.id)).length;
+  const nc = ps.filter(p => noOtherCopy(p, v.id)).length;
+  const partial = ps.filter(p => !noOtherCopy(p, v.id) && missingParts(p, v.id).length).length;
   const ok = await confirmBox(`移除卷「${v.name}」？`,
     `<p>通常是这张卡已经清空或准备清空。</p>
-     <p>· ${ps.length - nc} 张在其他卷上有副本：照常显示。<br>· <b>${nc}</b> 张没有其他副本：从常规列表和搜索中隐藏，进入「图库 → 无卷关联照片…」，预览、星级、标签、收藏夹都保留。</p>
+     <p>· ${ps.length - nc} 张在其他卷上有副本：照常显示${partial ? `（其中 <b>${partial}</b> 张只有部分文件有副本，比如缺 RAW）` : ''}。<br>· <b>${nc}</b> 张没有其他副本：从常规列表和搜索中隐藏，进入「图库 → 无卷关联照片…」，预览、星级、标签、收藏夹都保留。</p>
      <p class="muted">卡上的文件不会被动。以后再插上这张卡会被当作新卷，没删掉的照片会对回原来的记录。</p>`, '移除卷', true);
   if (!ok) return;
   v.status = 'removed'; v.removedAt = '今天';
@@ -1344,6 +1407,15 @@ function markGone(volId, ids) {
   goneOnDisk.get(volId)?.forEach(id => ids.includes(id) && goneOnDisk.get(volId).delete(id));
   return orphaned;
 }
+// 读原片时发现不在（导出、100% 放大）：改为历史位置，重新筛选，焦点落到邻近的照片上。
+function discoveredGone(volId, ids) {
+  const prev = S.focus, idx = S.result.indexOf(prev);
+  const orphaned = markGone(volId, ids);
+  recompute();
+  if (prev != null && !S.result.includes(prev)) { const nf = S.result[Math.min(Math.max(idx, 0), S.result.length - 1)]; if (nf != null) focusOnly(nf); }
+  renderAll(); renderGrid(); renderView();
+  return orphaned;
+}
 function rescanVolume(v, quiet) {
   if (!v.online) return toast('卷离线，插上后才能扫描');
   const gone = [...(goneOnDisk.get(v.id) || [])].filter(id => P[id]?.locations.some(l => l.vol === v.id && l.status === 'present'));
@@ -1370,10 +1442,11 @@ function orphanWindow() {
     m.querySelectorAll('.mc[data-oid]').forEach(c => c.onclick = e => { const id = +c.dataset.oid; if (!(e.metaKey || e.shiftKey)) { if (!sel.has(id) || sel.size > 1) { sel.clear(); sel.add(id); } else sel.delete(id); } else sel.has(id) ? sel.delete(id) : sel.add(id); sync(); });
     m.querySelectorAll('[data-gsel]').forEach(b => b.onclick = () => { groups[b.dataset.gsel].forEach(p => sel.add(p.id)); sync(); });
     m.querySelector('#oDel').onclick = async () => {
-      const ids = [...sel]; const n = ids.length;
+      const ids = [...sel].filter(id => P[id] && !visible(P[id])); const n = ids.length;
       const ok = await confirmBox(`删除 ${n} 张照片的记录和预览？`, '<p>删除后无法撤销。卡和盘上的源文件不受影响。</p>', `删除 ${n} 张`, true);
       if (!ok) return orphanWindow();
-      ids.forEach(id => { const p = P[id]; photos.splice(photos.indexOf(p), 1); delete P[id]; collections.forEach(c => c.ids.delete(id)); });
+      // 确认时按当时的状态再核对一次：期间被重扫找回的照片不删。
+      ids.filter(id => P[id] && !visible(P[id])).forEach(id => { const p = P[id]; photos.splice(photos.indexOf(p), 1); delete P[id]; collections.forEach(c => c.ids.delete(id)); });
       // 已移除的卷不再有任何照片时，一并删除。
       volumes.filter(v => v.status === 'removed' && !photos.some(p => p.locations.some(l => l.vol === v.id))).forEach(v => volumes.splice(volumes.indexOf(v), 1));
       S.undo = S.undo.filter(op => op.kind !== 'photo' || op.before.every(([id]) => P[id]));
