@@ -19,6 +19,22 @@ case "exif":
             print("  身份: 读不出元数据")
         }
     }
+case "dev-synth":
+    // 开发用：在指定目录生成合成的十万条库，给性能目标测量用。不碰真实的库。
+    guard arguments.count >= 2 else {
+        print("用法：photoai dev-synth <目录> [照片数]")
+        exit(1)
+    }
+    var options = SyntheticLibrary.Options()
+    if arguments.count >= 3, let count = Int(arguments[2]) { options.photoCount = count }
+    let started = Date()
+    do {
+        try SyntheticLibrary.build(at: LibraryPaths(root: URL(fileURLWithPath: arguments[1], isDirectory: true)), options: options)
+        print("已生成 \(options.photoCount) 张，用时 \(Int(Date().timeIntervalSince(started))) 秒")
+    } catch {
+        print("生成失败：\(error)")
+        exit(1)
+    }
 default:
     print("用法：photoai exif <文件>…")
     exit(arguments.isEmpty ? 0 : 1)

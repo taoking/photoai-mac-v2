@@ -60,6 +60,18 @@ public struct LibraryReader: Sendable {
         return counts
     }
 
+    /// 每张可见照片的现存位置所在的卷。网格用它标“离线”（照片的卷都没挂载）。
+    public func photoVolumes() throws -> [PhotoID: [VolumeID]] {
+        var result: [PhotoID: [VolumeID]] = [:]
+        try db.query(
+            """
+            SELECT DISTINCT f.photo_id, l.volume_id FROM locations l JOIN files f ON f.id = l.file_id
+            WHERE l.status = 'present';
+            """
+        ) { result[$0.int(0), default: []].append($0.int(1)) }
+        return result
+    }
+
     // MARK: - 照片
 
     public func photos(in scope: PhotoScope, sort: PhotoSort = .captureDateDescending) throws -> [PhotoSummary] {
