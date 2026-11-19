@@ -1,0 +1,102 @@
+<script>
+window.__errs=[];window.addEventListener('error',e=>__errs.push(e.message+' @'+e.lineno));
+const out=[];const ok=(c,m)=>out.push((c?'PASS ':'FAIL ')+m);
+const key=(k,o={})=>document.dispatchEvent(new KeyboardEvent('keydown',Object.assign({key:k,bubbles:true},o)));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+(async()=>{try{
+ ok(S.result.length===700,'卡A 初始 700 张: '+S.result.length);
+ ok(document.querySelectorAll('#grid .cell').length===700,'网格渲染 700 格');
+ const first=S.focus; key(' '); ok(S.view==='single','空格进入单张');
+ key('5'); ok(P[first].rating===5,'按 5 打星');
+ key('6'); ok(P[first].labels.has(1),'按 6 加经典');
+ key('5',{modifierCapsLock:true}); ok(S.autoAdvance && S.focus===S.result[1],'Caps Lock 自动前进');
+ key('6'); ok(!S.autoAdvance && S.focus===S.result[1],'关 Caps Lock 后不前进'); key('5');
+ const second=S.result[1]; ok(P[second].rating===5&&P[second].labels.has(1),'第二张 5 星 + 经典');
+ key('ArrowRight'); key('3'); key('7');
+ key('Escape'); ok(S.view==='grid','Esc 回网格');
+ // 筛选：经典 + ★5
+ document.querySelector('[data-f="label"][data-v="1"]').click();
+ document.querySelector('[data-f="star"][data-v="5"]').click();
+ ok(S.result.length===2,'经典+5星 = 2 张: '+S.result.length);
+ const r0=S.result[0]; S.sel=new Set([r0]); S.focus=r0; key('3');
+ ok(S.result.includes(r0)&&staleCount()===1,'改星后保持在结果里，stale=1');
+ ok(document.querySelector('[data-f="refresh"]').textContent.includes('1 张已不符合'),'刷新按钮提示');
+ key('5');
+ key('a',{metaKey:true}); ok(S.sel.size===2,'⌘A 全选');
+ key('B',{shiftKey:true}); await sleep(10);
+ const inp=document.querySelector('#ncName'); ok(!!inp,'⇧B 打开收藏夹对话框，建议名='+(inp&&inp.value));
+ document.querySelector('#ncOk').click();
+ const c=collections[collections.length-1]; ok(c.ids.size===2,'新建收藏夹并加入 2 张');
+ ok(S.lastColl===c.id,'记住上次收藏夹');
+ // 切走再切回，筛选条件保留
+ setSource({type:'all'}); ok(S.result.length>700,'全部照片 '+S.result.length);
+ setSource({type:'vol',id:'A'}); ok(curFilter().labels.has(1)&&S.result.length===2,'卡A 记住筛选条件');
+ setSource({type:'coll',id:c.id}); ok(S.result.length===2,'收藏夹 2 张');
+ S.sel=new Set([S.result[0]]); key('Backspace'); ok(c.ids.size===1 && S.result.length===1,'⌫ 移出收藏夹');
+ key('z',{metaKey:true}); ok(c.ids.size===2 && S.result.length===2,'⌘Z 撤销移出');
+ // B 继续加入
+ setSource({type:'vol',id:'BK'}); S.sel=new Set([S.result[0]]); S.focus=S.result[0]; key('b'); ok(c.ids.size===3,'B 加入上次收藏夹');
+ // 比较
+ S.sel=new Set(S.result.slice(0,2)); setView('compare'); ok(S.view==='compare','进入比较');
+ key('P',{shiftKey:true}); const ci=compareIds(); ok(P[ci[0]].flag==='pick'&&P[ci[1]].flag==='reject','⇧P');
+ key('ArrowRight'); ok(S.cmpFocus===1,'比较中切焦点');
+ key('Escape');
+ // 紧凑标题行与筛选条收起
+ ok(document.querySelector('#head').offsetHeight<=40,'标题行高度 '+document.querySelector('#head').offsetHeight+'px');
+ ok(document.querySelector('#filterbar').offsetHeight<=40,'筛选条一行 '+document.querySelector('#filterbar').offsetHeight+'px');
+ setSource({type:'vol',id:'A'}); key('\\'); ok(!S.filterbarOpen && document.querySelector('#filterbar').classList.contains('hidden'),'\\ 收起筛选条');
+ ok(document.querySelector('#head .fsum')&&document.querySelector('#head .fsum').textContent.includes('经典'),'收起后标题行显示筛选摘要: '+(document.querySelector('#head .fsum')||{}).textContent);
+ key('\\'); ok(S.filterbarOpen,'再按 \\ 展开');
+ setView('single'); ok(document.querySelector('#main').classList.contains('immersive')&&document.querySelector('#head').offsetHeight===0,'单张视图收起标题行和筛选条');
+ key('f'); ok(document.body.classList.contains('focusmode')&&document.querySelector('#sidebar').offsetWidth===0,'F 专注模式');
+ key('Escape'); ok(!document.body.classList.contains('focusmode')&&S.view==='single','Esc 先退出专注');
+ key('Escape'); ok(S.view==='grid','再按 Esc 回网格');
+ // 原片在 Finder 里被删
+ // 云南只在备份盘 2 上，没有其他副本
+ setSource({type:'month',id:'2026-05'});
+ const bk=volById('BK'); simulateFinderDelete(bk); const gone=[...goneOnDisk.get('BK')]; ok(gone.length===5,'模拟删除 5 张');
+ ok(gone.every(id=>visible(P[id])),'删除后软件暂时不知道，照常显示');
+ S.sel=new Set([gone[0],gone[1]]); exportDialog('sel'); document.querySelector('#exOk').click();
+ ok(P[gone[0]].locations.find(l=>l.vol==='BK').status==='historical','导出时读不到 → 位置改为历史');
+ rescanVolume(bk); ok(gone.every(id=>P[id].locations.find(l=>l.vol==='BK').status==='historical'),'重新扫描后 5 张位置都改为历史');
+ ok(gone.every(id=>!visible(P[id])),'没有其他副本的进入无卷关联');
+ // 文件又放回去、重扫：位置恢复为现存（这里直接还原，后面的计数不受影响）
+ gone.forEach(id=>P[id].locations.forEach(l=>{if(l.vol==='BK')l.status='present'})); recompute(); renderAll(); renderGrid();
+ ok(gone.every(id=>visible(P[id])),'恢复后重新可见');
+ // 导出
+ exportDialog(); ok(!!document.querySelector('#exOk'),'导出面板: '+document.querySelector('#exOk').textContent); closeModal();
+ setSource({type:'vol',id:'B'}); exportDialog('result'); ok(document.querySelector('#exNeed').textContent.includes('离线'),'离线卷提示'); closeModal();
+ // 清卡 + 移除
+ const vA=volById('A'); const ncA=photos.filter(p=>visible(p)&&p.locations.some(l=>l.vol==='A'&&isPresent(l))&&noOtherCopy(p,'A')).length;
+ ok(ncA===250,'卡A 无副本 250: '+ncA);
+ clearCardCheck(vA); ok(document.querySelector('.modal .mh').textContent.includes('清卡检查'),'清卡检查弹窗');
+ document.querySelector('#rmV').click(); await sleep(10);
+ document.querySelector('#cOk').click(); await sleep(10);
+ ok(vA.status==='removed','卡A 已移除');
+ const orph=photos.filter(p=>!visible(p)).length; ok(orph===250+30,'无卷关联 280: '+orph);
+ ok(!document.querySelector('#sidebar').textContent.includes('卡 A 128G'),'侧栏不再显示卡A');
+ ok(c.ids.size===3 && sourcePhotos({type:'coll',id:c.id}).length===1,'收藏夹隐藏无卷关联照片');
+ orphanWindow(); ok(document.querySelectorAll('.ogroup').length===2,'无卷关联按卷分 2 组');
+ document.querySelector('[data-gsel="D"]').click(); document.querySelector('#oDel').click(); await sleep(10);
+ document.querySelector('#cOk').click(); await sleep(10);
+ ok(!!volById('D'),'卡D 仍被 20 张照片的历史位置引用，卷记录保留');
+ ok(photos.filter(p=>!visible(p)).length===250,'剩余无卷关联 250');
+ closeModal();
+ // 标签 ⌥
+ setSource({type:'vol',id:'BK'}); S.sel=new Set([S.result[0]]); S.focus=S.result[0];
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'¡',code:'Digit3',altKey:true,bubbles:true})); ok(P[S.result[0]].labels.has(3),'⌥3 风景');
+ // 搜索
+ const s=document.querySelector('#search'); s.value='5210-5220 风景'; s.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+ ok(S.source.type==='search'&&S.search.length===2,'搜索解析 2 个条件: '+S.search.map(t=>t.label).join('|')+' 结果 '+S.result.length);
+ // 网格上下
+ setSource({type:'vol',id:'BK'}); const f0=S.focus; key('ArrowDown'); ok(S.focus!==f0,'↓ 换行');
+ // 插卡
+ simulateInsert(); document.querySelector('#bnAdd').click(); document.querySelector('#vOk').click();
+ await sleep(12000); ok(volById('E')&&S.tasks===null&&sourcePhotos({type:'vol',id:'E'}).length===240,'模拟导入完成');
+ renderView(); setView('single'); ok(!!document.querySelector('#single .img'),'单张渲染');
+}catch(e){out.push('EXC '+e.message+' '+e.stack)}
+ out.push('ERRORS: '+JSON.stringify(__errs));
+ const pre=document.createElement('pre');pre.id='__out';pre.textContent=out.join('\n');document.body.appendChild(pre);
+ document.title='DONE';
+})();
+</script>

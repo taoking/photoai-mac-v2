@@ -1,0 +1,1513 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhotoAI v2 原型</title>
+<style>
+:root{
+  --bg:#f5f5f7; --panel:#ffffff; --side:#ececef; --line:#d9d9de; --text:#1d1d1f; --sub:#6e6e73;
+  --accent:#0a66ff; --accent-weak:rgba(10,102,255,.14); --hover:rgba(0,0,0,.05);
+  --warn:#d97706; --danger:#d92d20; --ok:#16a34a; --chip:#e8e8ed; --shadow:0 12px 40px rgba(0,0,0,.22);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#1e1e20; --panel:#262628; --side:#2c2c2f; --line:#3a3a3e; --text:#f2f2f4; --sub:#9a9aa1;
+    --accent:#3b82ff; --accent-weak:rgba(59,130,255,.22); --hover:rgba(255,255,255,.06);
+    --chip:#3a3a3e; --shadow:0 12px 40px rgba(0,0,0,.6);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font:13px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;overflow:hidden}
+button{font:inherit;color:inherit}
+input,select{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:3px 10px;cursor:pointer}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn:disabled{opacity:.45;cursor:default}
+.muted{color:var(--sub)}
+kbd{font:11px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--panel)}
+
+/* 菜单栏 */
+#menubar{height:26px;display:flex;align-items:center;gap:2px;padding:0 10px;background:var(--side);border-bottom:1px solid var(--line);user-select:none}
+#menubar .m{position:relative;padding:2px 9px;border-radius:4px;cursor:default}
+#menubar .m:hover,#menubar .m.open{background:var(--hover)}
+#menubar .m b{font-weight:600}
+#menubar .drop{display:none;position:absolute;top:24px;left:0;min-width:240px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:5px;z-index:50}
+#menubar .m.open .drop{display:block}
+.drop .it{display:flex;justify-content:space-between;gap:20px;padding:4px 10px;border-radius:5px;cursor:default;white-space:nowrap}
+.drop .it:hover{background:var(--accent);color:#fff}
+.drop .it:hover .muted{color:#fff}
+.drop hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+#menubar .proto{margin-left:auto;color:var(--sub);font-size:12px}
+
+#app{display:flex;height:calc(100% - 26px - 26px)}
+/* 侧栏 */
+#sidebar{width:228px;flex:none;background:var(--side);border-right:1px solid var(--line);overflow:auto;padding:8px 6px 20px;user-select:none}
+.sec{margin-top:12px}
+.sec-h{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:600;color:var(--sub);padding:0 8px 3px}
+.sec-h .add{cursor:pointer;font-size:14px;line-height:1;padding:0 4px;border-radius:4px}
+.sec-h .add:hover{background:var(--hover)}
+.row{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:6px;cursor:default;white-space:nowrap}
+.row:hover{background:var(--hover)}
+.row.on{background:var(--accent-weak)}
+.row .n{margin-left:auto;color:var(--sub);font-size:11px;font-variant-numeric:tabular-nums}
+.row .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.row .tw{width:12px;color:var(--sub);flex:none;text-align:center}
+.row.l2{padding-left:22px}.row.l3{padding-left:40px}
+.dot.online{background:var(--ok)}.dot.offline{border:1.5px solid var(--sub)}
+
+/* 主区 */
+#main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--panel)}
+#toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+#search{flex:0 1 260px;min-width:110px}
+#toolbar button,#toolbar select,#toolbar .seg{white-space:nowrap;flex:none}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:3px 10px;cursor:pointer}
+.seg button.on{background:var(--accent-weak);color:var(--accent);font-weight:600}
+.seg button+button{border-left:1px solid var(--line)}
+#toolbar .sp{flex:1}
+/* 标题行：一行 34px，卷信息、筛选摘要、计数、更多操作都在这一行 */
+#head{display:flex;align-items:center;gap:10px;padding:0 12px 0 16px;height:36px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+#head h1{font-size:15px;margin:0;font-weight:650;overflow:hidden;text-overflow:ellipsis}
+#head .meta{color:var(--sub);font-size:12px;display:flex;align-items:center;gap:5px}
+#head .warn{color:var(--warn);font-weight:600;cursor:pointer;font-size:12px}
+#head .warn:hover{text-decoration:underline}
+#head .count{margin-left:auto;color:var(--sub);font-size:12px;font-variant-numeric:tabular-nums}
+#head .more{border:0;background:transparent;cursor:pointer;border-radius:5px;padding:2px 7px;font-size:15px;line-height:1}
+#head .more:hover{background:var(--hover)}
+.fsum{display:inline-flex;align-items:center;gap:4px;background:var(--accent-weak);color:var(--accent);border-radius:10px;padding:1px 8px;font-size:12px;cursor:pointer}
+.fsum .x{opacity:.7}.fsum .x:hover{opacity:1}
+#chips{display:none}
+#fbBtn .n{background:var(--accent);color:#fff;border-radius:8px;padding:0 5px;font-size:11px;margin-left:3px}
+#fbBtn.on{background:var(--accent-weak);color:var(--accent);border-color:var(--accent)}
+/* 单张、比较：标题行和筛选条都收起，画面留给照片 */
+#main.immersive #head,#main.immersive #filterbar{display:none}
+body.focusmode #sidebar,body.focusmode #inspector,body.focusmode #toolbar,body.focusmode #checklist{display:none}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--chip);border-radius:12px;padding:2px 9px;font-size:12px}
+.chip .x{cursor:pointer;opacity:.6}.chip .x:hover{opacity:1}
+#filterbar{display:flex;align-items:center;gap:4px;padding:4px 16px;border-bottom:1px solid var(--line);overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+.fb-group{display:inline-flex;align-items:center;gap:3px;padding-right:6px;margin-right:2px;border-right:1px solid var(--line);flex:none}
+.fb-group:last-child{border-right:0}
+.f{border:1px solid var(--line);background:transparent;border-radius:12px;padding:1px 9px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px}
+.f:hover{background:var(--hover)}
+.f.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.f .sw{width:9px;height:9px;border-radius:50%}
+.fb-count{margin-left:auto;color:var(--sub);font-variant-numeric:tabular-nums}
+.stalebtn{border-color:var(--warn);color:var(--warn)}
+#content{flex:1;position:relative;min-height:0}
+.view{position:absolute;inset:0;overflow:auto}
+.hidden{display:none!important}
+
+/* 网格 */
+#grid{padding:6px 14px 40px}
+.day-h{position:sticky;top:0;z-index:2;background:var(--panel);padding:10px 2px 6px;font-weight:600;display:flex;gap:10px;align-items:baseline}
+.day-h .muted{font-weight:400}
+.cells{display:flex;flex-wrap:wrap;gap:8px}
+.cell{position:relative;flex:none;cursor:default;border-radius:6px;padding:3px;border:2px solid transparent}
+.cell.sel{border-color:var(--accent);background:var(--accent-weak)}
+.cell.focus{outline:2px dashed var(--accent);outline-offset:1px}
+.cell.stale .ph{opacity:.45}
+.cell .ph{width:100%;border-radius:4px;position:relative;overflow:hidden}
+.cell .cap{font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-top:2px}
+.b{position:absolute;font-size:11px;line-height:1;border-radius:9px;padding:3px 6px;background:rgba(0,0,0,.5);color:#fff}
+.b.stars{top:6px;left:6px;color:#ffd60a}
+.b.flag{top:6px;right:6px}
+.b.flag.pick{background:var(--ok)}.b.flag.reject{background:var(--danger)}
+.b.kind{bottom:6px;right:6px;font-size:10px}
+.b.offline{bottom:6px;left:6px;background:rgba(217,119,6,.85)}
+.b.stale{top:50%;left:50%;transform:translate(-50%,-50%);white-space:nowrap;background:rgba(0,0,0,.7)}
+.ldots{position:absolute;left:6px;bottom:6px;display:flex;gap:3px}
+.ldots i{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,255,255,.9);display:block}
+.cell .ph.pending{background:repeating-linear-gradient(45deg,var(--chip) 0 8px,var(--panel) 8px 16px)!important}
+.cell .ph.pending::after{content:"生成预览中";position:absolute;inset:0;display:grid;place-items:center;color:var(--sub);font-size:11px}
+
+/* 单张：没有顶部栏，信息条浮在画面底部，鼠标不动 2 秒后淡出 */
+#single{display:flex;flex-direction:column;overflow:hidden}
+.s-head{display:flex;align-items:center;gap:12px;padding:5px 12px;border-bottom:1px solid var(--line);font-size:12px}
+.sbar{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
+  background:rgba(20,20,22,.78);color:#fff;border-radius:10px;padding:5px 8px 5px 6px;z-index:4;white-space:nowrap;
+  opacity:0;transition:opacity .25s;backdrop-filter:blur(8px)}
+.stage.show .sbar,.sbar:hover{opacity:1}
+.sbar .btn{background:transparent;border-color:rgba(255,255,255,.25);color:#fff;padding:1px 8px}
+.sbar .muted{color:rgba(255,255,255,.65)}
+.sbar .stars span{cursor:pointer;font-size:15px;color:rgba(255,255,255,.4)}
+.sbar .stars span.on{color:#f5a524}
+.sbar .lc{display:inline-flex;align-items:center;gap:3px;font-size:12px}
+.sbar .lc i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.sbar .fl{border-radius:8px;padding:0 6px;font-size:11px}
+.stage{flex:1;display:grid;place-items:center;position:relative;overflow:hidden;background:var(--bg)}
+.stage .img{border-radius:3px;box-shadow:0 4px 20px rgba(0,0,0,.25);transition:transform .15s;position:relative}
+.stage .img.zoom{transform:scale(2)}
+.zoomnote{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;z-index:3}
+.infoov{position:absolute;left:14px;bottom:14px;background:rgba(0,0,0,.65);color:#fff;border-radius:8px;padding:8px 12px;font-size:12px;z-index:3;line-height:1.6}
+.film{height:78px;flex:none;display:flex;gap:4px;overflow-x:auto;padding:6px 10px;border-top:1px solid var(--line)}
+.film .ft{flex:none;height:60px;border-radius:3px;border:2px solid transparent;cursor:pointer;position:relative}
+.film .ft.on{border-color:var(--accent)}
+.film .ft .fs{position:absolute;left:2px;bottom:1px;font-size:9px;color:#ffd60a;text-shadow:0 0 2px #000}
+
+/* 比较 */
+#compare{display:flex;flex-direction:column;overflow:hidden}
+.cmp{flex:1;display:grid;gap:8px;padding:8px;background:var(--bg);min-height:0}
+.cmp .cc{position:relative;display:grid;place-items:center;border:2px solid transparent;border-radius:6px;overflow:hidden;background:var(--panel)}
+.cmp .cc.on{border-color:var(--accent)}
+.cmp .cc .meta{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;border-radius:6px;padding:3px 8px;z-index:2}
+
+/* 存根页 */
+#stub{padding:24px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:14px}
+.pcard{text-align:center;cursor:pointer;padding:8px;border-radius:8px}
+.pcard:hover{background:var(--hover)}
+.pcard .face{width:96px;height:96px;border-radius:50%;margin:0 auto 6px}
+
+/* 检查器 */
+#inspector{width:290px;flex:none;border-left:1px solid var(--line);overflow:auto;padding:12px 14px;background:var(--panel)}
+#inspector h3{font-size:11px;color:var(--sub);margin:16px 0 6px;font-weight:600}
+#inspector .thumb{width:100%;border-radius:6px}
+.kv{display:grid;grid-template-columns:72px 1fr;gap:3px 8px;font-size:12px}
+.kv div:nth-child(odd){color:var(--sub)}
+.istars span{cursor:pointer;font-size:18px;color:var(--sub)}
+.istars span.on{color:#f5a524}
+.lchips{display:flex;flex-wrap:wrap;gap:4px}
+.loc{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0}
+.loc .p{color:var(--sub);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 状态栏 */
+#statusbar{height:26px;display:flex;align-items:center;gap:14px;padding:0 12px;border-top:1px solid var(--line);background:var(--side);font-size:12px;color:var(--sub)}
+#statusbar .tasks{display:flex;gap:12px;align-items:center;color:var(--text)}
+#statusbar .bar{width:80px;height:5px;border-radius:3px;background:var(--chip);overflow:hidden;display:inline-block;vertical-align:middle}
+#statusbar .bar i{display:block;height:100%;background:var(--accent)}
+#statusbar .sp{flex:1}
+.aa.on{color:var(--accent);font-weight:600}
+
+/* 弹层 */
+#modal-root .back{position:fixed;inset:0;background:rgba(0,0,0,.28);display:grid;place-items:center;z-index:100}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);width:min(560px,92vw);max-height:86vh;display:flex;flex-direction:column}
+.modal.wide{width:min(980px,94vw)}
+.modal .mh{padding:14px 18px 6px;font-weight:600;font-size:15px}
+.modal .mb{padding:6px 18px 10px;overflow:auto}
+.modal .mf{display:flex;justify-content:flex-end;gap:8px;padding:10px 18px 14px;border-top:1px solid var(--line)}
+.modal .mf .left{margin-right:auto}
+.opt{display:flex;gap:8px;align-items:center;padding:3px 0}
+.fieldset{margin:8px 0 12px}
+.fieldset .t{font-weight:600;margin-bottom:4px}
+.minigrid{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.minigrid .mc{height:54px;border-radius:3px;position:relative;cursor:default;border:2px solid transparent}
+.minigrid .mc.sel{border-color:var(--accent)}
+.minigrid .mc .b{font-size:9px;padding:2px 4px}
+.ogroup{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0}
+.ogroup .oh{display:flex;align-items:center;gap:8px}
+.collrow{display:flex;justify-content:space-between;align-items:center;padding:5px 8px;border-radius:6px;cursor:pointer}
+.collrow:hover{background:var(--hover)}
+.collrow.last{background:var(--accent-weak)}
+table.keys{border-collapse:collapse;width:100%}
+table.keys td{padding:3px 6px;border-bottom:1px solid var(--line)}
+table.keys td:first-child{white-space:nowrap;width:110px}
+.labelrow{display:flex;gap:8px;align-items:center;margin:4px 0}
+.labelrow .sw{width:20px;height:20px;border-radius:50%;cursor:pointer;flex:none}
+
+#toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;z-index:200;pointer-events:none}
+#toast div{background:rgba(30,30,32,.92);color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;box-shadow:var(--shadow)}
+#banner{position:fixed;top:36px;right:16px;z-index:90}
+#banner .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:12px 14px;width:300px}
+#ctx{position:fixed;z-index:150;display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:5px;min-width:200px}
+#ctx .it{padding:4px 10px;border-radius:5px;cursor:default;display:flex;justify-content:space-between;gap:16px}
+#ctx .it:hover{background:var(--accent);color:#fff}
+#ctx hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+
+#checklist{position:fixed;right:16px;bottom:38px;z-index:80;width:300px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);font-size:12px}
+#checklist .ch{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;cursor:pointer;font-weight:600}
+#checklist .cb{padding:0 12px 10px}
+#checklist label{display:flex;gap:6px;padding:2px 0;align-items:flex-start}
+#checklist.min .cb{display:none}
+</style>
+</head>
+<body>
+<div id="menubar"></div>
+<div id="app">
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <div id="toolbar">
+      <input id="search" placeholder="搜索：DSC01926、1926-1950、2026-08、经典、地名、相机…（回车）">
+      <select id="sort" title="排序">
+        <option value="timeDesc">拍摄时间 新→旧</option>
+        <option value="timeAsc">拍摄时间 旧→新</option>
+        <option value="name">文件名</option>
+      </select>
+      <div class="seg" id="viewseg">
+        <button data-v="grid" title="网格（空格切换）">▦ 网格</button>
+        <button data-v="single" title="单张（空格）">▢ 单张</button>
+        <button data-v="compare" title="比较（C）">◫ 比较</button>
+      </div>
+      <input id="size" type="range" min="90" max="280" value="150" title="缩略图大小" style="width:110px">
+      <div class="sp"></div>
+      <button class="btn" id="fbBtn" title="显示 / 隐藏筛选条（\）">筛选</button>
+      <button class="btn" id="exportBtn" title="导出（⌘E）">导出…</button>
+      <button class="btn" id="inspBtn" title="显示 / 隐藏检查器">ⓘ 检查器</button>
+    </div>
+    <div id="head"></div>
+    <div id="chips"></div>
+    <div id="filterbar"></div>
+    <div id="content">
+      <div id="grid" class="view"></div>
+      <div id="single" class="view hidden"></div>
+      <div id="compare" class="view hidden"></div>
+      <div id="stub" class="view hidden"></div>
+    </div>
+  </main>
+  <aside id="inspector"></aside>
+</div>
+<div id="statusbar"></div>
+<div id="modal-root"></div>
+<div id="toast"></div>
+<div id="banner"></div>
+<div id="ctx"></div>
+<div id="checklist"></div>
+
+<script>
+'use strict';
+/* =========================================================================
+   PhotoAI v2 可点击原型
+   只模拟界面和交互：照片是生成的色块，数据只在内存里，刷新页面即重置。
+   设计依据：docs/设计稿.md、docs/信息架构与交互.md
+   ========================================================================= */
+
+// ---------- 小工具 ----------
+let seed = 20261119;
+function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+const pick = a => a[Math.floor(rnd() * a.length)];
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const WEEK = '日一二三四五六';
+const DAY = 86400000;
+function dayKey(ts) { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function dayTitle(ts) { const d = new Date(ts); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 · 星期${WEEK[d.getDay()]}`; }
+function timeStr(ts) { const d = new Date(ts); return `${dayKey(ts)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`; }
+function toast(msg) {
+  const el = document.createElement('div'); el.textContent = msg; $('#toast').appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+// ---------- 模拟数据 ----------
+const LABEL_PALETTE = ['#e5484d', '#f5a524', '#30a46c', '#3e63dd', '#8e4ec6', '#12a594', '#e93d82', '#ad7f58', '#8b8d98'];
+const labels = [
+  { id: 1, name: '经典', color: '#e5484d' }, { id: 2, name: '人像', color: '#f5a524' },
+  { id: 3, name: '风景', color: '#30a46c' }, { id: 4, name: '人文', color: '#3e63dd' },
+  { id: 5, name: '', color: '#8e4ec6' }, { id: 6, name: '', color: '#12a594' },
+  { id: 7, name: '', color: '#e93d82' }, { id: 8, name: '', color: '#ad7f58' }, { id: 9, name: '', color: '#8b8d98' },
+];
+const labelById = id => labels.find(l => l.id === id);
+
+const volumes = [
+  { id: 'A', name: '卡 A 128G', kind: 'card', online: true, status: 'active', capacity: '128 GB', root: 'DCIM', lastScan: '今天 14:02' },
+  { id: 'BK', name: '备份盘 2', kind: 'disk', online: true, status: 'active', capacity: '4 TB', root: '照片', lastScan: '昨天 21:40' },
+  { id: 'B', name: '卡 B 64G', kind: 'card', online: false, status: 'active', capacity: '64 GB', root: 'DCIM', lastScan: '11月2日' },
+  { id: 'C', name: '旧卡 C', kind: 'card', online: false, status: 'active', capacity: '32 GB', root: 'DCIM', lastScan: '2025年12月1日' },
+  { id: 'D', name: '卡 D 32G', kind: 'card', online: false, status: 'removed', capacity: '32 GB', root: 'DCIM', lastScan: '2026年7月3日', removedAt: '2026年7月5日' },
+];
+const volById = id => volumes.find(v => v.id === id);
+
+const LENSES = ['FE 24-70mm F2.8 GM II', 'FE 70-200mm F2.8 GM II', 'FE 35mm F1.4 GM', 'FE 16-35mm F4 G'];
+const PEOPLE = ['小王', '阿杰', '妈妈', '林林'];
+const photos = [];
+const P = {};
+let nextId = 1;
+let batchSeq = 1;
+
+function genTrip({ vol, count, start, days, places, startNo, hues, batch, trip }) {
+  const startTs = new Date(start + 'T08:00:00').getTime();
+  const perDay = Math.ceil(count / days);
+  const list = [];
+  for (let i = 0; i < count; i++) {
+    const dayIdx = Math.floor(i / perDay);
+    const k = i % perDay;
+    const ts = startTs + dayIdx * DAY + Math.floor(k * (11 * 3600000 / perDay)) + Math.floor(rnd() * 40000);
+    const portrait = rnd() < 0.27;
+    const r = rnd();
+    const kind = r < 0.55 ? 'RAW+JPG' : r < 0.9 ? 'JPG' : 'RAW';
+    const no = startNo + i;
+    const name = 'DSC' + String(no).padStart(5, '0');
+    const folder = `DCIM/${100 + Math.floor(no / 1000) % 900}MSDCF`;
+    const h1 = pick(hues) + Math.floor(rnd() * 30) - 15;
+    const p = {
+      id: nextId++, name, no, kind, ts, w: portrait ? 2 : 3, h: portrait ? 3 : 2, portrait,
+      h1, h2: (h1 + 40 + Math.floor(rnd() * 140)) % 360, light: 55 + Math.floor(rnd() * 25),
+      camera: 'Sony A7M4', lens: pick(LENSES), iso: pick([100, 200, 400, 800, 1600, 3200]),
+      aperture: pick(['f/1.8', 'f/2.8', 'f/4', 'f/5.6', 'f/8', 'f/11']),
+      shutter: pick(['1/2000', '1/1000', '1/500', '1/250', '1/125', '1/60']), focal: pick(['24mm', '35mm', '50mm', '70mm', '135mm', '200mm']),
+      place: pick(places), trip,
+      people: portrait && rnd() < 0.6 ? [pick(PEOPLE)] : (rnd() < 0.05 ? [pick(PEOPLE)] : []),
+      rating: 0, flag: 'none', labels: new Set(), batch, preview: 'done',
+      locations: [{ vol, path: `${volById(vol).root === 'DCIM' ? folder : volById(vol).root + '/' + trip}/${name}`, status: vol === 'D' ? 'historical' : 'present' }],
+    };
+    photos.push(p); P[p.id] = p; list.push(p);
+  }
+  return list;
+}
+
+const tripC = genTrip({ vol: 'C', count: 120, start: '2025-11-08', days: 3, places: ['杭州 · 西湖', '杭州 · 灵隐寺'], startNo: 2100, hues: [30, 200, 120], batch: batchSeq++, trip: '2025-11 杭州' });
+const tripY = genTrip({ vol: 'BK', count: 250, start: '2026-05-01', days: 5, places: ['大理 · 洱海', '大理 · 古城', '丽江 · 玉龙雪山'], startNo: 5200, hues: [190, 210, 100], batch: batchSeq++, trip: '2026-05 云南' });
+const tripD = genTrip({ vol: 'D', count: 50, start: '2026-06-14', days: 2, places: ['上海 · 外滩', '上海 · 武康路'], startNo: 6100, hues: [20, 260], batch: batchSeq++, trip: '2026-06 上海' });
+const tripA = genTrip({ vol: 'A', count: 700, start: '2026-08-10', days: 8, places: ['乌鲁木齐', '喀纳斯', '禾木', '赛里木湖', '独库公路'], startNo: 1500, hues: [200, 40, 100, 25], batch: batchSeq++, trip: '2026-08 新疆' });
+const tripB = genTrip({ vol: 'B', count: 260, start: '2026-10-03', days: 4, places: ['东京 · 浅草', '东京 · 涩谷', '镰仓'], startNo: 8800, hues: [330, 10, 220], batch: batchSeq++, trip: '2026-10 东京' });
+
+// 备份盘 2 上还有：新疆前 450 张、旧卡 C 的前 60 张、卡 D 的前 20 张。
+tripA.slice(0, 450).forEach(p => p.locations.push({ vol: 'BK', path: `照片/2026-08 新疆/${p.name}`, status: 'present' }));
+tripC.slice(0, 60).forEach(p => p.locations.push({ vol: 'BK', path: `照片/2025-11 杭州/${p.name}`, status: 'present' }));
+tripD.slice(0, 20).forEach(p => p.locations.push({ vol: 'BK', path: `照片/2026-06 上海/${p.name}`, status: 'present' }));
+
+// 云南和杭州是以前选过的：带一些星级、标签与标记。
+[...tripY, ...tripC, ...tripD].forEach(p => {
+  const r = rnd();
+  p.rating = r < 0.35 ? 0 : r < 0.55 ? 2 : r < 0.75 ? 3 : r < 0.9 ? 4 : 5;
+  if (rnd() < 0.25) p.labels.add(p.portrait ? 2 : 3);
+  if (p.rating === 5 && rnd() < 0.6) p.labels.add(1);
+  if (rnd() < 0.12) p.flag = 'reject'; else if (p.rating >= 4 && rnd() < 0.5) p.flag = 'pick';
+});
+let collSeq = 1;
+const collections = [
+  { id: collSeq++, name: '云南 · 精选', ids: new Set(tripY.filter(p => p.rating === 5).map(p => p.id)) },
+  { id: collSeq++, name: '家人', ids: new Set(photos.filter(p => p.people.includes('妈妈')).slice(0, 40).map(p => p.id)) },
+];
+const collById = id => collections.find(c => c.id === id);
+
+// ---------- 规则 ----------
+// 可见 ⇔ 至少一个现存位置，且所在卷没被移除（离线也算）。
+const isPresent = l => l.status === 'present' && volById(l.vol).status === 'active';
+const visible = p => p.locations.some(isPresent);
+const presentLocs = p => p.locations.filter(isPresent);
+const isOnline = p => presentLocs(p).some(l => volById(l.vol).online);
+function noOtherCopy(p, volId) { return !p.locations.some(l => isPresent(l) && l.vol !== volId); }
+function inAnyColl(p) { return collections.some(c => c.ids.has(p.id)); }
+
+// ---------- 状态 ----------
+const S = {
+  source: { type: 'vol', id: 'A' }, view: 'grid', sort: 'timeDesc', rowH: 150, inspector: true,
+  sel: new Set(), focus: null, anchor: null,
+  filters: {}, result: [], lastColl: null, undo: [], redo: [], autoAdvance: false,
+  expandedYears: new Set([2026]), expandedMonths: new Set(['2026-08']),
+  zoom: false, info: false, cmpFocus: 0, search: null, tasks: null,
+  filterbarOpen: true, focusMode: false,
+};
+const srcKey = s => s.type + ':' + (s.id ?? '');
+const emptyFilter = () => ({ starMode: 'gte', stars: new Set(), labels: new Set(), noLabel: false, flags: new Set(), kinds: new Set() });
+function curFilter() { const k = srcKey(S.source); return S.filters[k] || (S.filters[k] = emptyFilter()); }
+
+function sourcePhotos(src) {
+  const vis = photos.filter(visible);
+  switch (src.type) {
+    case 'all': return vis;
+    case 'recent': { const b = Math.max(...vis.map(p => p.batch)); return vis.filter(p => p.batch === b); }
+    case 'year': return vis.filter(p => new Date(p.ts).getFullYear() === src.id);
+    case 'month': return vis.filter(p => dayKey(p.ts).startsWith(src.id));
+    case 'day': return vis.filter(p => dayKey(p.ts) === src.id);
+    case 'vol': return vis.filter(p => p.locations.some(l => l.vol === src.id && isPresent(l)));
+    case 'coll': { const c = collById(src.id); return c ? vis.filter(p => c.ids.has(p.id)) : []; }
+    case 'person': return vis.filter(p => p.people.includes(src.id));
+    case 'place': return vis.filter(p => p.place === src.id);
+    case 'search': return vis.filter(p => (S.search || []).every(t => t.test(p)));
+    default: return [];
+  }
+}
+function matches(p, f) {
+  if (f.stars.size) {
+    if (f.starMode === 'gte') { if (p.rating < [...f.stars][0]) return false; }
+    else if (!f.stars.has(p.rating)) return false;
+  }
+  if (f.labels.size || f.noLabel) {
+    const okL = [...f.labels].some(id => p.labels.has(id)) || (f.noLabel && p.labels.size === 0);
+    if (!okL) return false;
+  }
+  if (f.flags.size && !f.flags.has(p.flag)) return false;
+  if (f.kinds.size && !f.kinds.has(p.kind)) return false;
+  return true;
+}
+function sortList(list) {
+  const s = S.sort;
+  return list.sort((a, b) => s === 'timeAsc' ? a.ts - b.ts : s === 'timeDesc' ? b.ts - a.ts : a.name.localeCompare(b.name));
+}
+// 重新筛选。打星、打标签时不调用它：结果保持不变，直到用户点“刷新结果”或改条件。
+function recompute(keepSel = true) {
+  const f = curFilter();
+  S.result = sortList(sourcePhotos(S.source).filter(p => matches(p, f))).map(p => p.id);
+  const inRes = new Set(S.result);
+  if (keepSel) { S.sel = new Set([...S.sel].filter(id => inRes.has(id))); }
+  else S.sel = new Set();
+  if (!inRes.has(S.focus)) S.focus = S.result[0] ?? null;
+  if (S.sel.size === 0 && S.focus != null) S.sel.add(S.focus);
+  S.anchor = S.focus;
+}
+const staleCount = () => { const f = curFilter(); return S.result.filter(id => P[id] && !matches(P[id], f)).length; };
+
+// ---------- 照片外观（色块代替照片） ----------
+function phStyle(p) {
+  const L = p.light;
+  const base = `linear-gradient(180deg, hsl(${p.h1} 55% ${L + 12}%) 0%, hsl(${p.h1} 45% ${L}%) 46%, hsl(${p.h2} 35% ${L - 20}%) 54%, hsl(${p.h2} 30% ${L - 38}%) 100%)`;
+  return p.portrait ? `radial-gradient(ellipse 16% 12% at 50% 36%, hsl(${p.h2} 35% ${L - 5}%) 0 98%, transparent 100%), radial-gradient(ellipse 26% 30% at 50% 72%, hsl(${p.h2} 30% ${L - 25}%) 0 98%, transparent 100%), ${base}` : base;
+}
+function badges(p, small) {
+  let h = '';
+  if (p.rating) h += `<span class="b stars">${'★'.repeat(p.rating)}</span>`;
+  if (p.flag !== 'none') h += `<span class="b flag ${p.flag}">${p.flag === 'pick' ? 'Pick' : 'Reject'}</span>`;
+  if (!small && p.kind === 'RAW+JPG') h += `<span class="b kind">RAW+JPG</span>`;
+  if (p.labels.size) h += `<span class="ldots">${[...p.labels].map(id => `<i style="background:${labelById(id).color}"></i>`).join('')}</span>`;
+  else if (!small && !isOnline(p)) h += `<span class="b offline" title="所在卷离线，显示的是本机预览">离线</span>`;
+  return h;
+}
+
+// ---------- 侧栏 ----------
+function renderSidebar() {
+  const vis = photos.filter(visible);
+  const cur = srcKey(S.source);
+  const row = (type, id, label, n, extra = '', cls = '') =>
+    `<div class="row ${cls} ${cur === type + ':' + (id ?? '') ? 'on' : ''}" data-type="${type}" data-id="${id ?? ''}">${extra}<span>${esc(label)}</span>${n != null ? `<span class="n">${n.toLocaleString()}</span>` : ''}</div>`;
+  let h = `<div class="sec"><div class="sec-h">图库</div>${row('all', null, '全部照片', vis.length, '🖼')}${row('recent', null, '最近导入', sourcePhotos({ type: 'recent' }).length, '🕘')}</div>`;
+  // 时间：年 → 月 → 日
+  const years = {};
+  vis.forEach(p => { const d = new Date(p.ts); const y = d.getFullYear(); const m = dayKey(p.ts).slice(0, 7); const dk = dayKey(p.ts);
+    years[y] ??= { n: 0, months: {} }; years[y].n++; years[y].months[m] ??= { n: 0, days: {} }; years[y].months[m].n++; years[y].months[m].days[dk] = (years[y].months[m].days[dk] || 0) + 1; });
+  h += `<div class="sec"><div class="sec-h">时间</div>`;
+  Object.keys(years).sort((a, b) => b - a).forEach(y => {
+    const Y = years[y]; const yo = S.expandedYears.has(+y);
+    h += row('year', y, `${y} 年`, Y.n, `<span class="tw" data-tw-year="${y}">${yo ? '▾' : '▸'}</span>`);
+    if (!yo) return;
+    Object.keys(Y.months).sort().reverse().forEach(m => {
+      const M = Y.months[m]; const mo = S.expandedMonths.has(m);
+      h += row('month', m, `${+m.slice(5)} 月`, M.n, `<span class="tw" data-tw-month="${m}">${mo ? '▾' : '▸'}</span>`, 'l2');
+      if (mo) Object.keys(M.days).sort().reverse().forEach(d => { h += row('day', d, `${+d.slice(8)} 日`, M.days[d], '', 'l3'); });
+    });
+  });
+  h += `</div><div class="sec"><div class="sec-h">卷</div>`;
+  volumes.filter(v => v.status === 'active').forEach(v => {
+    const n = vis.filter(p => p.locations.some(l => l.vol === v.id && isPresent(l))).length;
+    h += row('vol', v.id, v.name, n, `<span class="dot ${v.online ? 'online' : 'offline'}" title="${v.online ? '在线' : '离线'}"></span>`);
+  });
+  h += `</div><div class="sec"><div class="sec-h">收藏夹<span class="add" id="newColl" title="新建收藏夹">＋</span></div>`;
+  collections.forEach(c => { h += row('coll', c.id, c.name, vis.filter(p => c.ids.has(p.id)).length, '📁'); });
+  h += `</div><div class="sec"><div class="sec-h">人物</div>${row('people', null, '全部人物', null, '👤')}</div>`;
+  h += `<div class="sec"><div class="sec-h">地点</div>${row('places', null, '全部地点', null, '📍')}</div>`;
+  $('#sidebar').innerHTML = h;
+}
+$('#sidebar').addEventListener('click', e => {
+  const tw = e.target.closest('[data-tw-year],[data-tw-month]');
+  if (tw) {
+    if (tw.dataset.twYear) { const y = +tw.dataset.twYear; S.expandedYears.has(y) ? S.expandedYears.delete(y) : S.expandedYears.add(y); }
+    else { const m = tw.dataset.twMonth; S.expandedMonths.has(m) ? S.expandedMonths.delete(m) : S.expandedMonths.add(m); }
+    renderSidebar(); return;
+  }
+  if (e.target.id === 'newColl') { newCollectionFlow([]); return; }
+  const r = e.target.closest('.row'); if (!r) return;
+  let id = r.dataset.id; const type = r.dataset.type;
+  if (type === 'year') id = +id;
+  if (type === 'coll') id = +id;
+  setSource({ type, id: id === '' ? null : id });
+});
+$('#sidebar').addEventListener('contextmenu', e => {
+  const r = e.target.closest('.row'); if (!r) return;
+  e.preventDefault();
+  if (r.dataset.type === 'vol') {
+    const v = volById(r.dataset.id);
+    showCtx(e, [['重新扫描', () => rescanVolume(v), !v.online],
+      ['改名…', () => renameVolume(v)], null, ['清卡检查…', () => clearCardCheck(v)], ['移除卷…', () => removeVolumeFlow(v)]]);
+  } else if (r.dataset.type === 'coll') {
+    const c = collById(+r.dataset.id);
+    showCtx(e, [['改名…', async () => { const n = await askText('重命名收藏夹', c.name); if (n) { c.name = n; renderAll(); } }],
+      ['删除收藏夹…', async () => { if (await confirmBox(`删除收藏夹「${c.name}」？`, '只删除这个收藏夹，照片本身、星级和标签都不受影响。', '删除', true)) { collections.splice(collections.indexOf(c), 1); if (S.source.type === 'coll' && S.source.id === c.id) setSource({ type: 'all' }); else renderAll(); } }]]);
+  }
+});
+
+// ---------- 头部、筛选条 ----------
+function sourceTitle(src = S.source) {
+  switch (src.type) {
+    case 'all': return '全部照片';
+    case 'recent': return '最近导入';
+    case 'year': return `${src.id} 年`;
+    case 'month': return `${src.id.slice(0, 4)} 年 ${+src.id.slice(5)} 月`;
+    case 'day': return dayTitle(new Date(src.id + 'T12:00:00').getTime());
+    case 'vol': return volById(src.id).name;
+    case 'coll': return collById(src.id)?.name ?? '收藏夹';
+    case 'person': return src.id;
+    case 'place': return src.id;
+    case 'search': return '搜索结果';
+    case 'people': return '人物';
+    case 'places': return '地点';
+  }
+}
+// 当前生效的筛选条件，一句话概括。筛选条收起时显示在标题行，保证“有筛选在生效”始终看得见。
+function filterSummary(f = curFilter()) {
+  const parts = [];
+  if (f.stars.size) parts.push(f.starMode === 'gte' ? `★${[...f.stars][0]}+` : [...f.stars].sort().map(n => n ? '★' + n : '未评分').join('/'));
+  const ls = [...f.labels].map(id => labelById(id).name); if (f.noLabel) ls.push('无标签'); if (ls.length) parts.push(ls.join('/'));
+  if (f.flags.size) parts.push([...f.flags].map(k => ({ pick: 'Pick', reject: 'Reject', none: '未标记' }[k])).join('/'));
+  if (f.kinds.size) parts.push([...f.kinds].join('/'));
+  return parts.join(' · ');
+}
+function activeFilterCount(f = curFilter()) { return (f.stars.size ? 1 : 0) + (f.labels.size || f.noLabel ? 1 : 0) + (f.flags.size ? 1 : 0) + (f.kinds.size ? 1 : 0); }
+// 标题行只有一行：标题、卷状态、无副本提醒、搜索条件、筛选摘要、计数、“⋯”更多操作。
+function renderHead() {
+  const src = S.source;
+  let h = `<h1>${esc(sourceTitle())}</h1>`;
+  if (src.type === 'vol') {
+    const v = volById(src.id);
+    const nc = sourcePhotos(src).filter(p => noOtherCopy(p, v.id)).length;
+    h += `<span class="meta" title="${v.capacity} · 扫描 ${esc(v.root)}/ · 上次扫描 ${esc(v.lastScan)}"><span class="dot ${v.online ? 'online' : 'offline'}" style="display:inline-block;width:7px;height:7px;border-radius:50%"></span>${v.online ? '在线' : '离线'}</span>`;
+    if (nc) h += `<span class="warn" data-act="check" title="点击做清卡检查">${nc.toLocaleString()} 张无副本</span>`;
+  }
+  if (src.type === 'search') h += (S.search || []).map((t, i) => `<span class="chip">${esc(t.label)}<span class="x" data-si="${i}">×</span></span>`).join('');
+  const sum = filterSummary();
+  if (sum && !S.filterbarOpen) h += `<span class="fsum" data-act="openfb" title="点击展开筛选条">筛选：${esc(sum)}<span class="x" data-act="clearf" title="清除筛选">✕</span></span>`;
+  if (!isStubSource()) h += `<span class="count">${S.result.length.toLocaleString()} / ${sourcePhotos(src).length.toLocaleString()} 张</span>`;
+  if (src.type === 'vol' || src.type === 'coll') h += `<button class="more" data-act="more" title="更多操作">⋯</button>`;
+  $('#head').innerHTML = h;
+}
+$('#head').addEventListener('click', e => {
+  const si = e.target.closest('[data-si]');
+  if (si) {
+    S.search.splice(+si.dataset.si, 1);
+    if (!S.search.length) setSource({ type: 'all' }); else { recompute(false); renderAll(); renderGrid(); }
+    return;
+  }
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  const act = a.dataset.act;
+  if (act === 'clearf') { e.stopPropagation(); S.filters[srcKey(S.source)] = emptyFilter(); recompute(); renderAll(); renderGrid(); return; }
+  if (act === 'openfb') return toggleFilterbar(true);
+  if (act === 'check') return clearCardCheck(volById(S.source.id));
+  if (act === 'more') {
+    const r = a.getBoundingClientRect(); const ev = { clientX: r.right - 220, clientY: r.bottom + 4 };
+    if (S.source.type === 'coll') {
+      const c = collById(S.source.id);
+      return showCtx(ev, [['收藏夹只存引用，移出（⌫）不影响照片', () => { }, true], null,
+        ['改名…', async () => { const n = await askText('重命名收藏夹', c.name); if (n) { c.name = n; renderAll(); } }],
+        ['导出这个收藏夹…', () => exportDialog('coll'), false, '⌘E']]);
+    }
+    const v = volById(S.source.id);
+    showCtx(ev, [[`${v.capacity} · 扫描 ${v.root}/ · 上次扫描 ${v.lastScan}`, () => { }, true], null,
+      ['重新扫描', () => rescanVolume(v), !v.online],
+      ['清卡检查…', () => clearCardCheck(v)], ['改名…', () => renameVolume(v)], ['移除卷…', () => removeVolumeFlow(v)], null,
+      [`（原型）模拟${v.online ? '拔出' : '插入'}`, () => togglePlug(v)],
+      ['（原型）在 Finder 里删掉 5 张原片', () => simulateFinderDelete(v), !v.online]]);
+  }
+});
+// 在线 / 离线只看卷有没有挂载（按卷 UUID 对上），不逐个检查原片。
+// 已知的卷插上时自动重扫一次，这时才会发现期间被删掉的原片。
+function togglePlug(v) {
+  v.online = !v.online;
+  if (v.online) { toast(`「${v.name}」已插入，自动重扫`); rescanVolume(v, true); }
+  else toast(`「${v.name}」已拔出：照片照常浏览，导出时需要插回`);
+  renderAll(); renderGrid();
+}
+function toggleFilterbar(open = !S.filterbarOpen) {
+  S.filterbarOpen = open;
+  renderHead(); renderFilterbar(); renderToolbarState();
+}
+function renderToolbarState() {
+  const n = activeFilterCount();
+  const b = $('#fbBtn'); b.classList.toggle('on', S.filterbarOpen);
+  b.innerHTML = `筛选${n ? `<span class="n">${n}</span>` : ''}`;
+}
+$('#fbBtn').addEventListener('click', () => toggleFilterbar());
+
+// 筛选条只占一行：星级、标签、标记常用，直接点；文件类型、无标签不常用，收进“更多”。
+// “刷新结果”只在有照片已不符合条件时出现。可以用工具栏“筛选”或 \ 收起。
+function renderFilterbar() {
+  renderToolbarState();
+  if (isStubSource() || !S.filterbarOpen) { $('#filterbar').classList.add('hidden'); return; }
+  $('#filterbar').classList.remove('hidden');
+  const f = curFilter();
+  const st = staleCount();
+  const starBtn = n => `<button class="f ${f.stars.has(n) ? 'on' : ''}" data-f="star" data-v="${n}">${n === 0 ? '未评分' : '★' + n}</button>`;
+  let h = `<span class="fb-group"><button class="f" data-f="starMode" title="切换：至少 N 星 / 正好 N 星">${f.starMode === 'gte' ? '≥' : '='}</button>${[1, 2, 3, 4, 5].map(starBtn).join('')}${f.starMode === 'eq' ? starBtn(0) : ''}</span>`;
+  h += `<span class="fb-group">${labels.filter(l => l.name).map(l => `<button class="f ${f.labels.has(l.id) ? 'on' : ''}" data-f="label" data-v="${l.id}"><span class="sw" style="background:${l.color}"></span>${esc(l.name)}</button>`).join('')}</span>`;
+  h += `<span class="fb-group">${[['pick', 'Pick'], ['reject', 'Reject'], ['none', '未标记']].map(([k, t]) => `<button class="f ${f.flags.has(k) ? 'on' : ''}" data-f="flag" data-v="${k}">${t}</button>`).join('')}</span>`;
+  const moreN = f.kinds.size + (f.noLabel ? 1 : 0);
+  h += `<span class="fb-group"><button class="f ${moreN ? 'on' : ''}" data-f="more">更多${moreN ? ' ' + moreN : ''} ▾</button>`;
+  if (st) h += `<button class="f stalebtn" data-f="refresh" title="按当前条件重新筛选">刷新结果（${st} 张已不符合）</button>`;
+  if (activeFilterCount(f)) h += `<button class="f" data-f="clear">清除</button>`;
+  h += `</span>`;
+  $('#filterbar').innerHTML = h;
+}
+$('#filterbar').addEventListener('click', e => {
+  const b = e.target.closest('[data-f]'); if (!b) return;
+  const f = curFilter(); const v = b.dataset.v;
+  if (b.dataset.f === 'more') {
+    const r = b.getBoundingClientRect();
+    const tick = on => on ? '✓ ' : '　 ';
+    const apply = fn => () => { fn(); recompute(); renderAll(); renderGrid(); renderView(); };
+    showCtx({ clientX: r.left, clientY: r.bottom + 4 }, [
+      ...['RAW+JPG', 'JPG', 'RAW'].map(k => [tick(f.kinds.has(k)) + k, apply(() => f.kinds.has(k) ? f.kinds.delete(k) : f.kinds.add(k))]),
+      null, [tick(f.noLabel) + '无标签', apply(() => f.noLabel = !f.noLabel)],
+    ]);
+    return;
+  }
+  switch (b.dataset.f) {
+    case 'starMode': f.starMode = f.starMode === 'gte' ? 'eq' : 'gte'; f.stars.clear(); break;
+    case 'star': { const n = +v; if (f.starMode === 'gte') { const had = f.stars.has(n); f.stars.clear(); if (!had) f.stars.add(n); } else f.stars.has(n) ? f.stars.delete(n) : f.stars.add(n); break; }
+    case 'label': { const n = +v; f.labels.has(n) ? f.labels.delete(n) : f.labels.add(n); break; }
+    case 'noLabel': f.noLabel = !f.noLabel; break;
+    case 'flag': f.flags.has(v) ? f.flags.delete(v) : f.flags.add(v); break;
+    case 'kind': f.kinds.has(v) ? f.kinds.delete(v) : f.kinds.add(v); break;
+    case 'clear': S.filters[srcKey(S.source)] = emptyFilter(); break;
+    case 'refresh': break;
+  }
+  recompute(); renderAll(); renderGrid(); renderView();
+});
+
+// ---------- 网格 ----------
+const gridEl = $('#grid');
+function cellHTML(p) {
+  const f = curFilter();
+  const w = Math.round(S.rowH * p.w / p.h);
+  const stale = !matches(p, f);
+  return `<div class="cell ${S.sel.has(p.id) ? 'sel' : ''} ${S.focus === p.id ? 'focus' : ''} ${stale ? 'stale' : ''}" data-id="${p.id}" style="width:${w + 10}px">
+    <div class="ph ${p.preview === 'pending' ? 'pending' : ''}" style="height:${S.rowH}px;background:${phStyle(p)}">${badges(p)}${stale ? '<span class="b stale">已不符合筛选</span>' : ''}</div>
+    <div class="cap">${p.name}${p.kind === 'RAW+JPG' ? '' : '.' + (p.kind === 'RAW' ? 'ARW' : 'JPG')}</div></div>`;
+}
+function renderGrid() {
+  if (isStubSource()) return;
+  const byTime = S.sort !== 'name';
+  let h = ''; let lastDay = null; let open = false; let dayCount = {};
+  if (byTime) S.result.forEach(id => { const k = dayKey(P[id].ts); dayCount[k] = (dayCount[k] || 0) + 1; });
+  if (!S.result.length) h = `<div class="muted" style="padding:40px;text-align:center">没有符合条件的照片。</div>`;
+  S.result.forEach(id => {
+    const p = P[id];
+    if (byTime) {
+      const k = dayKey(p.ts);
+      if (k !== lastDay) { if (open) h += '</div>'; h += `<div class="day-h">${dayTitle(p.ts)}<span class="muted">${dayCount[k]} 张</span></div><div class="cells">`; open = true; lastDay = k; }
+    } else if (!open) { h += '<div class="cells" style="padding-top:8px">'; open = true; }
+    h += cellHTML(p);
+  });
+  if (open) h += '</div>';
+  gridEl.innerHTML = h;
+}
+function patchCell(id) {
+  const el = gridEl.querySelector(`.cell[data-id="${id}"]`);
+  if (el) el.outerHTML = cellHTML(P[id]);
+}
+function syncSelClasses() {
+  gridEl.querySelectorAll('.cell').forEach(c => {
+    const id = +c.dataset.id;
+    c.classList.toggle('sel', S.sel.has(id));
+    c.classList.toggle('focus', S.focus === id);
+  });
+}
+function scrollFocusIntoView() {
+  const el = gridEl.querySelector(`.cell[data-id="${S.focus}"]`);
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+gridEl.addEventListener('mousedown', e => {
+  const c = e.target.closest('.cell'); if (!c || e.button !== 0) return;
+  const id = +c.dataset.id;
+  if (e.shiftKey && S.anchor != null) {
+    const a = S.result.indexOf(S.anchor), b = S.result.indexOf(id);
+    S.sel = new Set(S.result.slice(Math.min(a, b), Math.max(a, b) + 1));
+  } else if (e.metaKey || e.ctrlKey) {
+    S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); S.anchor = id;
+  } else { S.sel = new Set([id]); S.anchor = id; }
+  S.focus = id;
+  syncSelClasses(); renderInspector(); renderStatus();
+});
+gridEl.addEventListener('dblclick', e => { const c = e.target.closest('.cell'); if (c) setView('single'); });
+gridEl.addEventListener('contextmenu', e => {
+  const c = e.target.closest('.cell'); if (!c) return; e.preventDefault();
+  const id = +c.dataset.id; if (!S.sel.has(id)) { S.sel = new Set([id]); S.focus = S.anchor = id; syncSelClasses(); renderInspector(); }
+  const items = [['单张查看', () => setView('single'), false, '空格'], ['比较', () => setView('compare'), S.sel.size < 2, 'C'], null,
+    ['加入收藏夹…', () => addToCollectionDialog(), false, '⇧B']];
+  if (S.lastColl && collById(S.lastColl)) items.push([`加入「${collById(S.lastColl).name}」`, () => addToCollection(S.lastColl, [...S.sel]), false, 'B']);
+  if (S.source.type === 'coll') items.push(['移出收藏夹', () => removeFromCollection(), false, '⌫']);
+  items.push(null, ['导出所选…', () => exportDialog('sel'), false, '⌘E']);
+  showCtx(e, items);
+});
+
+function gridNeighbor(dir) {
+  const cells = [...gridEl.querySelectorAll('.cell')];
+  const cur = cells.find(c => +c.dataset.id === S.focus); if (!cur) return null;
+  const r = cur.getBoundingClientRect(); const cx = r.left + r.width / 2;
+  let best = null, bs = Infinity;
+  for (const c of cells) {
+    const q = c.getBoundingClientRect();
+    const dy = dir > 0 ? q.top - r.top : r.top - q.top;
+    if (dy < 5) continue;
+    const score = Math.round(dy) * 10000 + Math.abs(q.left + q.width / 2 - cx);
+    if (score < bs) { bs = score; best = c; }
+  }
+  return best ? +best.dataset.id : null;
+}
+
+// ---------- 视图切换 ----------
+function isStubSource() { return S.source.type === 'people' || S.source.type === 'places'; }
+function setView(v) {
+  if (isStubSource()) return;
+  if (v === 'compare') {
+    const ids = compareIds();
+    if (ids.length < 2) { toast('比较需要先选中 2–4 张照片'); return; }
+    S.cmpFocus = 0;
+  }
+  if (v !== 'grid' && S.focus == null) return;
+  S.view = v; S.zoom = false;
+  renderView();
+  if (v === 'grid') { syncSelClasses(); scrollFocusIntoView(); }
+}
+function renderView() {
+  const stub = isStubSource();
+  $('#grid').classList.toggle('hidden', stub || S.view !== 'grid');
+  $('#single').classList.toggle('hidden', stub || S.view !== 'single');
+  $('#compare').classList.toggle('hidden', stub || S.view !== 'compare');
+  $('#stub').classList.toggle('hidden', !stub);
+  // 单张、比较时收起标题行和筛选条，画面留给照片。
+  $('#main').classList.toggle('immersive', !stub && S.view !== 'grid');
+  document.querySelectorAll('#viewseg button').forEach(b => b.classList.toggle('on', b.dataset.v === S.view && !stub));
+  if (stub) renderStub();
+  else if (S.view === 'single') renderSingle();
+  else if (S.view === 'compare') renderCompare();
+}
+$('#viewseg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });
+
+// ---------- 单张 ----------
+function starsHTML(p, cls) { return `<span class="${cls}">${[1, 2, 3, 4, 5].map(n => `<span data-star="${n}" class="${p.rating >= n ? 'on' : ''}">★</span>`).join('')}</span>`; }
+function renderSingle() {
+  const p = P[S.focus]; if (!p) return;
+  const idx = S.result.indexOf(p.id);
+  const lab = [...p.labels].map(id => labelById(id)).map(l => `<span class="lc"><i style="background:${l.color}"></i>${esc(l.name || '标签')}</span>`).join('');
+  const online = isOnline(p);
+  const needVol = presentLocs(p).map(l => volById(l.vol).name).join(' 或 ');
+  $('#single').innerHTML = `
+    <div class="stage ${Date.now() < S.barUntil ? 'show' : ''}">
+      ${S.zoom ? `<div class="zoomnote">${zoomNote(p, online, needVol)}</div>` : ''}
+      <div class="img ${S.zoom ? 'zoom' : ''}" style="background:${phStyle(p)}"></div>
+      ${S.info ? `<div class="infoov">${timeStr(p.ts)}<br>${p.camera} · ${p.lens}<br>${p.focal} · ${p.aperture} · ${p.shutter}s · ISO ${p.iso}<br>📍 ${esc(p.place)}${p.people.length ? ' · 👤 ' + p.people.join('、') : ''}</div>` : ''}
+      <div class="sbar"><button class="btn" data-act="back" title="回到网格（空格 / Esc）">▦</button><b>${p.name}</b>
+        ${starsHTML(p, 'stars')}${lab}
+        ${p.flag !== 'none' ? `<span class="fl" style="background:${p.flag === 'pick' ? 'var(--ok)' : 'var(--danger)'}">${p.flag === 'pick' ? 'Pick' : 'Reject'}</span>` : ''}
+        <span class="muted">${idx + 1} / ${S.result.length}</span>
+        <button class="btn" data-act="info" title="参数浮层（I）">ⓘ</button>
+        <button class="btn" data-act="focus" title="专注模式：隐藏侧栏、检查器、工具栏（F）">${S.focusMode ? '退出专注' : '专注'}</button></div>
+    </div>
+    <div class="film" id="film"></div>`;
+  layoutStage($('#single .stage'), $('#single .img'), p, 24);
+  renderFilm();
+  if (Date.now() < S.barUntil) scheduleBarHide();
+}
+function zoomNote(p, online, needVol) {
+  if (!online) return `卷离线：只能放大 1600 预览；看原图请插入 ${esc(needVol)}`;
+  const loc = presentLocs(p).find(l => volById(l.vol).online);
+  if (isGone(p, loc.vol)) return `原片已不在「${esc(volById(loc.vol).name)}」上：只能放大 1600 预览。重新扫描这个卷后位置会更新`;
+  return '100%：正在读取原文件（原型）';
+}
+// 信息条：鼠标移动或刚打完星、标签时显示 2 秒，之后淡出，画面全部留给照片。
+S.barUntil = Date.now() + 2500;
+let barTimer = null;
+function pokeBar() { S.barUntil = Date.now() + 2000; document.querySelector('#single .stage')?.classList.add('show'); scheduleBarHide(); }
+function scheduleBarHide() {
+  clearTimeout(barTimer);
+  barTimer = setTimeout(() => document.querySelector('#single .stage')?.classList.remove('show'), Math.max(0, S.barUntil - Date.now()));
+}
+$('#single').addEventListener('mousemove', pokeBar);
+function setFocusMode(on = !S.focusMode) {
+  S.focusMode = on;
+  document.body.classList.toggle('focusmode', on);
+  toast(on ? '专注模式：F 或 Esc 退出' : '已退出专注模式');
+  renderView();
+}
+function layoutStage(stage, img, p, pad = 40) {
+  const W = stage.clientWidth - pad, H = stage.clientHeight - pad; const r = p.w / p.h;
+  let w = W, h = W / r; if (h > H) { h = H; w = H * r; }
+  img.style.width = Math.max(40, w) + 'px'; img.style.height = Math.max(40, h) + 'px';
+}
+function renderFilm() {
+  const film = $('#film'); if (!film) return;
+  // 只画当前位置附近的一段，原生实现会用虚拟化。
+  const idx = S.result.indexOf(S.focus);
+  const from = Math.max(0, idx - 40), to = Math.min(S.result.length, idx + 41);
+  film.innerHTML = S.result.slice(from, to).map(id => { const p = P[id];
+    return `<div class="ft ${id === S.focus ? 'on' : ''}" data-id="${id}" style="width:${Math.round(60 * p.w / p.h)}px;background:${phStyle(p)}">${p.rating ? `<span class="fs">${'★'.repeat(p.rating)}</span>` : ''}</div>`; }).join('');
+  const on = film.querySelector('.ft.on'); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+$('#single').addEventListener('click', e => {
+  const a = e.target.closest('[data-act]');
+  if (a?.dataset.act === 'back') return setView('grid');
+  if (a?.dataset.act === 'info') { S.info = !S.info; return renderSingle(); }
+  if (a?.dataset.act === 'focus') return setFocusMode();
+  const st = e.target.closest('[data-star]');
+  if (st) { const n = +st.dataset.star; setRating([S.focus], P[S.focus].rating === n ? 0 : n); return; }
+  const ft = e.target.closest('.ft');
+  if (ft) { focusOnly(+ft.dataset.id); renderSingle(); renderInspector(); }
+});
+window.addEventListener('resize', () => { if (S.view === 'single') renderSingle(); if (S.view === 'compare') renderCompare(); });
+
+// ---------- 比较 ----------
+function compareIds() {
+  const order = new Map(S.result.map((id, i) => [id, i]));
+  return [...S.sel].filter(id => order.has(id)).sort((a, b) => order.get(a) - order.get(b)).slice(0, 4);
+}
+function renderCompare() {
+  const ids = compareIds();
+  if (ids.length < 2) { S.view = 'grid'; return renderView(); }
+  if (S.cmpFocus >= ids.length) S.cmpFocus = 0;
+  const cols = ids.length === 2 ? 2 : 2, rows = ids.length > 2 ? 2 : 1;
+  $('#compare').innerHTML = `<div class="s-head"><button class="btn ghost" data-act="back" style="padding:0 6px">▦</button><b>比较 ${ids.length} 张</b>
+    <span class="muted">← → 切换焦点 · 打星、标签、标记作用于蓝框${ids.length === 2 ? ' · ⇧P 蓝框 Pick、另一张 Reject' : ''} · Z 同步放大 · F 专注</span></div>
+    <div class="cmp" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},1fr)">
+    ${ids.map((id, i) => { const p = P[id]; return `<div class="cc ${i === S.cmpFocus ? 'on' : ''}" data-i="${i}"><div class="meta">${p.name} ${p.rating ? '★'.repeat(p.rating) : ''} ${p.flag !== 'none' ? (p.flag === 'pick' ? '· Pick' : '· Reject') : ''} ${[...p.labels].map(l => labelById(l).name).join(' ')}</div><div class="img ${S.zoom ? 'zoom' : ''}" style="background:${phStyle(p)};transition:transform .15s"></div></div>`; }).join('')}
+    </div>`;
+  document.querySelectorAll('#compare .cc').forEach((cc, i) => layoutStage(cc, cc.querySelector('.img'), P[ids[i]], 24));
+}
+$('#compare').addEventListener('click', e => {
+  if (e.target.closest('[data-act="back"]')) return setView('grid');
+  const cc = e.target.closest('.cc'); if (cc) { S.cmpFocus = +cc.dataset.i; renderCompare(); renderInspectorFor(compareIds()[S.cmpFocus]); }
+});
+
+// ---------- 人物、地点（存根页） ----------
+function renderStub() {
+  const vis = photos.filter(visible);
+  if (S.source.type === 'people') {
+    $('#stub').innerHTML = `<h2 style="margin-top:0">人物</h2><p class="muted">导入后在后台识别；原型里是预先分好的四个人。点一个人看他的照片。</p><div class="pgrid">${PEOPLE.map((n, i) => {
+      const c = vis.filter(p => p.people.includes(n)).length;
+      return `<div class="pcard" data-person="${n}"><div class="face" style="background:radial-gradient(circle at 50% 40%, hsl(${i * 70 + 20} 45% 70%) 0 30%, hsl(${i * 70 + 20} 30% 40%) 31%)"></div><b>${n}</b><div class="muted">${c} 张</div></div>`; }).join('')}</div>`;
+  } else {
+    const counts = {}; vis.forEach(p => counts[p.place] = (counts[p.place] || 0) + 1);
+    $('#stub').innerHTML = `<h2 style="margin-top:0">地点</h2><p class="muted">坐标按约 1 公里网格转成地名并缓存（需联网，默认关闭）。原型里是模拟地名。</p>${Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<div class="row" data-place="${esc(k)}" style="max-width:360px">📍 <span>${esc(k)}</span><span class="n">${n}</span></div>`).join('')}`;
+  }
+}
+$('#stub').addEventListener('click', e => {
+  const pc = e.target.closest('[data-person]'); if (pc) return setSource({ type: 'person', id: pc.dataset.person });
+  const pl = e.target.closest('[data-place]'); if (pl) return setSource({ type: 'place', id: pl.dataset.place });
+});
+
+// ---------- 检查器 ----------
+function renderInspector() {
+  if (!S.inspector) return;
+  if (S.view === 'compare') return renderInspectorFor(compareIds()[S.cmpFocus]);
+  if (S.sel.size > 1) {
+    const ps = [...S.sel].map(id => P[id]);
+    const lc = {}; ps.forEach(p => p.labels.forEach(id => lc[id] = (lc[id] || 0) + 1));
+    $('#inspector').innerHTML = `<h3 style="margin-top:0">已选 ${S.sel.size} 张</h3>
+      <div class="muted">打星、打标签、Pick / Reject 会作用于全部所选照片。</div>
+      <h3>星级分布</h3><div class="kv">${[5, 4, 3, 2, 1, 0].map(n => `<div>${n ? '★'.repeat(n) : '未评分'}</div><div>${ps.filter(p => p.rating === n).length}</div>`).join('')}</div>
+      <h3>标签</h3><div class="lchips">${labels.filter(l => l.name).map(l => `<span class="f ${lc[l.id] === ps.length ? 'on' : ''}" data-tl="${l.id}"><span class="sw" style="background:${l.color}"></span>${esc(l.name)} ${lc[l.id] || 0}</span>`).join('')}</div>
+      <h3>操作</h3><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+      <button class="btn" data-ia="coll">加入收藏夹…（⇧B）</button><button class="btn" data-ia="export">导出所选…（⌘E）</button></div>`;
+    return;
+  }
+  renderInspectorFor(S.focus);
+}
+function renderInspectorFor(id) {
+  const p = P[id];
+  if (!p) { $('#inspector').innerHTML = `<div class="muted">选择一张照片查看详情。</div>`; return; }
+  const locs = presentLocs(p);
+  const colls = collections.filter(c => c.ids.has(p.id));
+  $('#inspector').innerHTML = `
+    <div class="thumb" style="aspect-ratio:${p.w}/${p.h};background:${phStyle(p)};max-height:200px;margin:0 auto"></div>
+    <div style="margin-top:8px"><b>${p.name}</b> <span class="muted">${p.kind === 'RAW+JPG' ? 'ARW + JPG' : p.kind === 'RAW' ? 'ARW' : 'JPG'}</span></div>
+    <div class="istars">${[1, 2, 3, 4, 5].map(n => `<span data-is="${n}" class="${p.rating >= n ? 'on' : ''}">★</span>`).join('')}</div>
+    <div style="display:flex;gap:4px;margin-top:4px">${[['pick', 'Pick'], ['reject', 'Reject'], ['none', '未标记']].map(([k, t]) => `<span class="f ${p.flag === k ? 'on' : ''}" data-if="${k}">${t}</span>`).join('')}</div>
+    <h3>标签</h3><div class="lchips">${labels.map((l, i) => l.name ? `<span class="f ${p.labels.has(l.id) ? 'on' : ''}" data-tl="${l.id}" title="${i < 4 ? (i + 6) + ' 或 ' : ''}⌥${i + 1}"><span class="sw" style="background:${l.color}"></span>${esc(l.name)}</span>` : '').join('')}</div>
+    <h3>拍摄</h3><div class="kv">
+      <div>时间</div><div>${timeStr(p.ts)}</div><div>相机</div><div>${p.camera}</div><div>镜头</div><div>${p.lens}</div>
+      <div>参数</div><div>${p.focal} · ${p.aperture} · ${p.shutter}s · ISO ${p.iso}</div>
+      <div>尺寸</div><div>${p.portrait ? '4672 × 7008' : '7008 × 4672'}</div><div>地点</div><div>${esc(p.place)}</div>
+      <div>人物</div><div>${p.people.length ? p.people.join('、') : '—'}</div></div>
+    <h3>现在在</h3>${locs.map(l => { const v = volById(l.vol); return `<div class="loc"><span class="dot ${v.online ? 'online' : 'offline'}" style="width:8px;height:8px;border-radius:50%;display:inline-block;flex:none"></span><div style="min-width:0"><div>${esc(v.name)} <span class="muted">${v.online ? '在线' : '离线'}</span></div><div class="p" title="${esc(l.path)}">${esc(l.path)}</div></div></div>`; }).join('')}
+    <h3>收藏夹</h3>${colls.length ? colls.map(c => `<div>📁 ${esc(c.name)}</div>`).join('') : '<div class="muted">—</div>'}`;
+}
+$('#inspector').addEventListener('click', e => {
+  const t = e.target.closest('[data-is],[data-if],[data-tl],[data-ia]'); if (!t) return;
+  const ids = targetIds();
+  if (t.dataset.is) { const n = +t.dataset.is; setRating(ids, ids.length === 1 && P[ids[0]].rating === n ? 0 : n); }
+  if (t.dataset.if) setFlag(ids, t.dataset.if);
+  if (t.dataset.tl) toggleLabel(ids, +t.dataset.tl);
+  if (t.dataset.ia === 'coll') addToCollectionDialog();
+  if (t.dataset.ia === 'export') exportDialog('sel');
+});
+
+// ---------- 编辑操作（可撤销） ----------
+function targetIds() {
+  if (S.view === 'compare') { const id = compareIds()[S.cmpFocus]; return id ? [id] : []; }
+  if (S.view === 'single') return S.focus != null ? [S.focus] : [];
+  return S.sel.size ? [...S.sel] : (S.focus != null ? [S.focus] : []);
+}
+const snap = p => ({ rating: p.rating, flag: p.flag, labels: [...p.labels] });
+function restore(p, s) { p.rating = s.rating; p.flag = s.flag; p.labels = new Set(s.labels); }
+function change(ids, mutate, label) {
+  if (!ids.length) return;
+  const before = ids.map(id => [id, snap(P[id])]);
+  ids.forEach(id => mutate(P[id]));
+  const after = ids.map(id => [id, snap(P[id])]);
+  S.undo.push({ kind: 'photo', before, after, label }); S.redo = [];
+  afterPhotoChange(ids);
+  toast(`${label}${ids.length > 1 ? `（${ids.length} 张）` : ''}`);
+  maybeAdvance(ids);
+}
+function afterPhotoChange(ids) {
+  ids.forEach(patchCell); syncSelClasses();
+  renderFilterbar(); renderInspector();
+  if (S.view === 'single') { S.barUntil = Date.now() + 1500; renderSingle(); }
+  if (S.view === 'compare') renderCompare();
+}
+function maybeAdvance(ids) {
+  if (!S.autoAdvance || ids.length !== 1 || S.view === 'compare') return;
+  move(1);
+}
+function setRating(ids, n) { change(ids, p => p.rating = n, n ? `★${n}` : '清除星级'); }
+function setFlag(ids, f) { change(ids, p => p.flag = f, f === 'pick' ? 'Pick' : f === 'reject' ? 'Reject' : '清除标记'); }
+function toggleLabel(ids, labelId) {
+  const l = labelById(labelId);
+  if (!l || !l.name) { toast('这个标签位还没有名字：在「图库 → 标签设置…」里定义'); return; }
+  const all = ids.every(id => P[id].labels.has(labelId));
+  change(ids, p => all ? p.labels.delete(labelId) : p.labels.add(labelId), `${all ? '去掉' : '加上'}标签「${l.name}」`);
+}
+function clearLabels(ids) { change(ids, p => p.labels.clear(), '清除所有标签'); }
+function undo() {
+  const op = S.undo.pop(); if (!op) return toast('没有可撤销的操作');
+  applyOp(op, true); S.redo.push(op); toast('撤销：' + op.label);
+}
+function redo() {
+  const op = S.redo.pop(); if (!op) return toast('没有可重做的操作');
+  applyOp(op, false); S.undo.push(op); toast('重做：' + op.label);
+}
+function applyOp(op, isUndo) {
+  if (op.kind === 'photo') { (isUndo ? op.before : op.after).forEach(([id, s]) => P[id] && restore(P[id], s)); afterPhotoChange(op.before.map(x => x[0]).filter(id => P[id])); }
+  else if (op.kind === 'coll') {
+    const c = collById(op.collId); if (!c) return;
+    const add = op.add !== isUndo;
+    op.ids.forEach(id => add ? c.ids.add(id) : c.ids.delete(id));
+    if (S.source.type === 'coll' && S.source.id === c.id) { recompute(); renderGrid(); renderView(); }
+    renderAll();
+  }
+}
+
+// ---------- 收藏夹 ----------
+function addToCollection(collId, ids) {
+  const c = collById(collId); if (!c || !ids.length) return;
+  const added = ids.filter(id => !c.ids.has(id));
+  added.forEach(id => c.ids.add(id));
+  S.lastColl = c.id;
+  S.undo.push({ kind: 'coll', collId: c.id, ids: added, add: true, label: `加入「${c.name}」` }); S.redo = [];
+  toast(`已将 ${ids.length} 张加入「${c.name}」${added.length < ids.length ? `（其中 ${ids.length - added.length} 张原本就在）` : ''}；之后按 B 继续加入这里`);
+  renderSidebar(); renderInspector();
+}
+function removeFromCollection() {
+  if (S.source.type !== 'coll') return;
+  const c = collById(S.source.id); const ids = [...S.sel].filter(id => c.ids.has(id));
+  if (!ids.length) return;
+  ids.forEach(id => c.ids.delete(id));
+  S.undo.push({ kind: 'coll', collId: c.id, ids, add: false, label: `移出「${c.name}」` }); S.redo = [];
+  toast(`已从「${c.name}」移出 ${ids.length} 张；照片本身不受影响（⌘Z 撤销）`);
+  const idx = S.result.indexOf(ids[0]);
+  recompute(false);
+  const nf = S.result[Math.min(idx, S.result.length - 1)];
+  if (nf != null) { S.sel = new Set([nf]); S.focus = S.anchor = nf; }
+  renderAll(); renderGrid(); renderView();
+}
+function suggestCollName() {
+  const f = curFilter();
+  const parts = [];
+  if (S.source.type === 'vol') { const t = photos.find(p => S.result.includes(p.id))?.trip; if (t) parts.push(t.replace(/^\d{4}-\d{2} /, '')); }
+  else parts.push(sourceTitle());
+  f.labels.forEach(id => parts.push(labelById(id).name));
+  if (f.stars.size) parts.push(f.starMode === 'gte' ? `${[...f.stars][0]}星+` : [...f.stars].map(n => n + '星').join('/'));
+  return parts.join(' · ');
+}
+async function newCollectionFlow(ids) {
+  const name = await askText('新建收藏夹', suggestCollName() || '新收藏夹', ids.length ? `创建并加入 ${ids.length} 张` : '创建');
+  if (!name) return;
+  const c = { id: collSeq++, name, ids: new Set() }; collections.push(c);
+  if (ids.length) addToCollection(c.id, ids); else { toast(`已新建「${name}」`); renderSidebar(); }
+}
+function addToCollectionDialog() {
+  const ids = targetIds(); if (!ids.length) return toast('先选中照片');
+  const list = collections.map(c => `<div class="collrow ${c.id === S.lastColl ? 'last' : ''}" data-c="${c.id}"><span>📁 ${esc(c.name)}</span><span class="muted">${c.ids.size} 张${c.id === S.lastColl ? ' · 上次用过（B）' : ''}</span></div>`).join('');
+  openModal(`<div class="mh">把 ${ids.length} 张照片加入收藏夹</div>
+    <div class="mb">${list || '<div class="muted">还没有收藏夹。</div>'}
+    <div class="fieldset" style="margin-top:12px"><div class="t">或新建一个</div><div style="display:flex;gap:6px"><input id="ncName" style="flex:1" value="${esc(suggestCollName())}"><button class="btn primary" id="ncOk">新建并加入</button></div></div></div>
+    <div class="mf"><button class="btn" data-close>取消</button></div>`, m => {
+    m.querySelectorAll('.collrow').forEach(r => r.onclick = () => { closeModal(); addToCollection(+r.dataset.c, ids); });
+    const ok = () => { const n = m.querySelector('#ncName').value.trim(); if (!n) return; closeModal(); const c = { id: collSeq++, name: n, ids: new Set() }; collections.push(c); addToCollection(c.id, ids); };
+    m.querySelector('#ncOk').onclick = ok;
+    const inp = m.querySelector('#ncName'); inp.focus(); inp.select(); inp.onkeydown = e => { if (e.key === 'Enter') ok(); };
+  });
+}
+
+// ---------- 导航 ----------
+function focusOnly(id) { S.focus = S.anchor = id; S.sel = new Set([id]); }
+function move(offset) {
+  if (S.view === 'compare') { const n = compareIds().length; S.cmpFocus = (S.cmpFocus + offset + n) % n; renderCompare(); renderInspector(); return; }
+  if (!S.result.length) return;
+  const i = S.result.indexOf(S.focus);
+  const j = Math.min(Math.max((i < 0 ? 0 : i) + offset, 0), S.result.length - 1);
+  focusOnly(S.result[j]);
+  if (S.view === 'single') renderSingle(); else { syncSelClasses(); scrollFocusIntoView(); }
+  renderInspector(); renderStatus();
+}
+function moveRow(dir) {
+  if (S.view !== 'grid') return;
+  const id = gridNeighbor(dir); if (id == null) return;
+  focusOnly(id); syncSelClasses(); scrollFocusIntoView(); renderInspector(); renderStatus();
+}
+function setSource(src) {
+  S.source = src; S.view = isStubSource() ? S.view : (S.view === 'compare' ? 'grid' : S.view);
+  if (src.type === 'month') { S.expandedYears.add(+src.id.slice(0, 4)); }
+  S.sel = new Set(); S.focus = null;
+  if (!isStubSource()) recompute(false);
+  if (S.view === 'single' && S.focus == null) S.view = 'grid';
+  renderAll(); renderGrid(); renderView();
+  gridEl.scrollTop = 0;
+}
+
+// ---------- 键盘：所有单键动作只在这里定义一次 ----------
+const KEYMAP = [
+  ['← →', '上一张 / 下一张（比较视图里切换焦点格）'], ['↑ ↓', '网格中换行'],
+  ['1–5、0', '设置星级 / 清除星级'], ['6–9', '切换前四个标签（再按一次取消）'], ['⌥1–⌥9、⌥0', '切换第 1–9 个标签 / 清除所有标签'],
+  ['P / X / U', 'Pick / Reject / 清除标记'], ['⇧P', '两张比较时：焦点格 Pick、另一张 Reject'],
+  ['⇪ Caps Lock', '自动前进：打星、打标签、标记后自动跳到下一张'],
+  ['空格', '网格 ↔ 单张'], ['C', '比较所选 2–4 张'], ['Esc', '退出专注模式 / 回到网格'], ['Z', '放大到 100%'], ['I', '单张视图的参数浮层'],
+  ['F', '专注模式：单张、比较时隐藏侧栏、检查器、工具栏'], ['\\', '显示 / 隐藏筛选条'],
+  ['B', '加入上一次用过的收藏夹'], ['⇧B', '加入收藏夹…（选择或新建）'], ['⌫', '在收藏夹里：移出收藏夹'],
+  ['⌘A', '全选当前结果'], ['⌘Z / ⇧⌘Z', '撤销 / 重做'], ['⌘E', '导出…'], ['⌘F', '聚焦搜索框'], ['?', '显示这张速查表'],
+];
+function updateCaps(e) {
+  if (typeof e.getModifierState !== 'function') return;
+  const on = e.getModifierState('CapsLock');
+  if (on !== S.autoAdvance) { S.autoAdvance = on; renderStatus(); toast(on ? '自动前进：开（打完自动跳下一张）' : '自动前进：关'); }
+}
+document.addEventListener('keyup', updateCaps);
+document.addEventListener('keydown', e => {
+  updateCaps(e);
+  if ($('#modal-root').firstChild) { if (e.key === 'Escape') closeModal(); return; }
+  hideCtx();
+  const tag = document.activeElement?.tagName;
+  const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  const meta = e.metaKey || e.ctrlKey;
+  if (meta) {
+    const k = e.key.toLowerCase();
+    if (k === 'f') { e.preventDefault(); $('#search').focus(); $('#search').select(); return; }
+    if (inInput) return;
+    if (k === 'a') { e.preventDefault(); S.sel = new Set(S.result); syncSelClasses(); renderInspector(); renderStatus(); toast(`已全选 ${S.result.length} 张`); }
+    else if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+    else if (k === 'e') { e.preventDefault(); exportDialog(); }
+    return;
+  }
+  if (inInput) { if (e.key === 'Escape') document.activeElement.blur(); return; }
+  if (isStubSource()) return;
+  if (e.altKey) {
+    const m = e.code.match(/^Digit(\d)$/);
+    if (m) { e.preventDefault(); const n = +m[1]; n === 0 ? clearLabels(targetIds()) : toggleLabel(targetIds(), labels[n - 1].id); }
+    return;
+  }
+  const k = e.key;
+  if (k === 'ArrowRight' || k === 'ArrowLeft') { e.preventDefault(); move(k === 'ArrowRight' ? 1 : -1); return; }
+  if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); moveRow(k === 'ArrowDown' ? 1 : -1); return; }
+  if (/^[0-5]$/.test(k)) { setRating(targetIds(), +k); return; }
+  if (/^[6-9]$/.test(k)) { toggleLabel(targetIds(), labels[+k - 6].id); return; }
+  switch (k) {
+    case 'p': setFlag(targetIds(), 'pick'); break;
+    case 'P': if (S.view === 'compare' && compareIds().length === 2) { const ids = compareIds(); const w = ids[S.cmpFocus], l = ids[1 - S.cmpFocus];
+        const before = ids.map(id => [id, snap(P[id])]); P[w].flag = 'pick'; P[l].flag = 'reject';
+        S.undo.push({ kind: 'photo', before, after: ids.map(id => [id, snap(P[id])]), label: `${P[w].name} Pick、${P[l].name} Reject` }); S.redo = []; afterPhotoChange(ids); toast(`${P[w].name} Pick，${P[l].name} Reject`); }
+      else setFlag(targetIds(), 'pick'); break;
+    case 'x': case 'X': setFlag(targetIds(), 'reject'); break;
+    case 'u': case 'U': setFlag(targetIds(), 'none'); break;
+    case ' ': e.preventDefault(); setView(S.view === 'grid' ? 'single' : 'grid'); break;
+    case 'c': case 'C': setView('compare'); break;
+    case 'Escape': if (S.focusMode) setFocusMode(false); else setView('grid'); break;
+    case 'f': case 'F': if (S.view !== 'grid') setFocusMode(); else toast('专注模式用于单张和比较视图'); break;
+    case '\\': toggleFilterbar(); break;
+    case 'z': case 'Z': if (S.view !== 'grid') { S.zoom = !S.zoom; renderView(); } break;
+    case 'i': case 'I': if (S.view === 'single') { S.info = !S.info; renderSingle(); } break;
+    case 'b': if (S.lastColl && collById(S.lastColl)) addToCollection(S.lastColl, targetIds()); else addToCollectionDialog(); break;
+    case 'B': addToCollectionDialog(); break;
+    case 'Backspace': case 'Delete': if (S.source.type === 'coll') removeFromCollection(); else toast('常规列表里没有删除照片：照片会在所在的卷被移除后进入「无卷关联照片」'); break;
+    case '?': showKeys(); break;
+  }
+});
+
+// ---------- 搜索 ----------
+const LENS_TOKENS = ['24-70', '70-200', '16-35', '35mm'];
+function parseSearch(q) {
+  const toks = q.trim().split(/\s+/).filter(Boolean);
+  return toks.map(t => {
+    const lens = LENS_TOKENS.find(x => t.toLowerCase() === x.toLowerCase());
+    if (lens) return { label: `镜头：${t}`, test: p => p.lens.includes(lens) };
+    let m;
+    if ((m = t.match(/^(?:DSC)?0*(\d{1,5})(?:-0*(\d{1,5}))?(?:\.\w+)?$/i))) {
+      const a = +m[1], b = m[2] ? +m[2] : a;
+      return { label: m[2] ? `编号 ${a}–${b}` : `编号 ${a}`, test: p => p.no >= Math.min(a, b) && p.no <= Math.max(a, b) };
+    }
+    if ((m = t.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/))) {
+      const pre = `${m[1]}-${m[2].padStart(2, '0')}${m[3] ? '-' + m[3].padStart(2, '0') : ''}`;
+      return { label: `日期：${pre}`, test: p => dayKey(p.ts).startsWith(pre) };
+    }
+    if ((m = t.match(/^(\d{1,2})月(?:(\d{1,2})日?)?$/))) {
+      const mm = m[1].padStart(2, '0'), dd = m[2] ? m[2].padStart(2, '0') : null;
+      return { label: `日期：${+mm} 月${dd ? +dd + ' 日' : ''}`, test: p => { const k = dayKey(p.ts); return k.slice(5, 7) === mm && (!dd || k.slice(8) === dd); } };
+    }
+    const lab = labels.find(l => l.name && l.name === t);
+    if (lab) return { label: `标签：${t}`, test: p => p.labels.has(lab.id) };
+    if (PEOPLE.includes(t)) return { label: `人物：${t}`, test: p => p.people.includes(t) };
+    if (/a7|ilce|sony/i.test(t)) return { label: `相机：${t}`, test: p => true };
+    if (photos.some(p => p.place.includes(t))) return { label: `地点：${t}`, test: p => p.place.includes(t) };
+    return { label: `文字：${t}`, test: p => p.name.toLowerCase().includes(t.toLowerCase()) };
+  });
+}
+$('#search').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const q = e.target.value; if (!q.trim()) return;
+  S.search = parseSearch(q); e.target.value = ''; e.target.blur();
+  S.filters['search:'] = emptyFilter();
+  setSource({ type: 'search', id: null });
+});
+
+// ---------- 工具栏 ----------
+$('#sort').addEventListener('change', e => { S.sort = e.target.value; recompute(); renderGrid(); renderView(); });
+$('#size').addEventListener('input', e => { S.rowH = +e.target.value; renderGrid(); syncSelClasses(); });
+$('#exportBtn').addEventListener('click', () => exportDialog());
+$('#inspBtn').addEventListener('click', () => { S.inspector = !S.inspector; $('#inspector').classList.toggle('hidden', !S.inspector); if (S.inspector) renderInspector(); if (S.view !== 'grid') renderView(); });
+
+// ---------- 状态栏 ----------
+function renderStatus() {
+  let h = '';
+  if (S.tasks) {
+    h += `<span class="tasks">${S.tasks.map(t => `<span>${t.name} ${t.paused ? '（已暂停）' : ''} <span class="bar"><i style="width:${Math.round(100 * t.done / t.total)}%"></i></span> ${t.done.toLocaleString()}/${t.total.toLocaleString()}</span>`).join('')}<button class="btn ghost" id="taskDetail">详情</button></span>`;
+  }
+  h += `<span class="sp"></span><span>${S.sel.size > 1 ? `已选 ${S.sel.size} 张 · ` : ''}${S.result.length.toLocaleString()} 张</span>`;
+  h += `<span class="aa ${S.autoAdvance ? 'on' : ''}" title="按 Caps Lock 开关">自动前进：${S.autoAdvance ? '开' : '关'}</span>`;
+  h += `<span><kbd>?</kbd> 快捷键</span>`;
+  $('#statusbar').innerHTML = h;
+}
+$('#statusbar').addEventListener('click', e => { if (e.target.id === 'taskDetail') taskPanel(); });
+
+// ---------- 弹层工具 ----------
+function openModal(html, onMount, wide) {
+  closeModal();
+  $('#modal-root').innerHTML = `<div class="back"><div class="modal ${wide ? 'wide' : ''}">${html}</div></div>`;
+  const m = $('#modal-root .modal');
+  m.querySelectorAll('[data-close]').forEach(b => b.onclick = closeModal);
+  $('#modal-root .back').addEventListener('mousedown', e => { if (e.target.classList.contains('back')) closeModal(); });
+  onMount && onMount(m);
+}
+function closeModal() { $('#modal-root').innerHTML = ''; }
+function askText(title, value = '', okLabel = '确定') {
+  return new Promise(res => {
+    openModal(`<div class="mh">${esc(title)}</div><div class="mb"><input id="askIn" style="width:100%" value="${esc(value)}"></div>
+      <div class="mf"><button class="btn" data-close>取消</button><button class="btn primary" id="askOk">${esc(okLabel)}</button></div>`, m => {
+      const inp = m.querySelector('#askIn'); inp.focus(); inp.select();
+      const ok = () => { const v = inp.value.trim(); closeModal(); res(v || null); };
+      m.querySelector('#askOk').onclick = ok; inp.onkeydown = e => { if (e.key === 'Enter') ok(); };
+      m.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { closeModal(); res(null); });
+    });
+  });
+}
+function confirmBox(title, body, okLabel, danger) {
+  return new Promise(res => {
+    openModal(`<div class="mh">${esc(title)}</div><div class="mb">${body}</div>
+      <div class="mf"><button class="btn" data-close>取消</button><button class="btn ${danger ? 'danger' : 'primary'}" id="cOk">${esc(okLabel)}</button></div>`, m => {
+      m.querySelector('#cOk').onclick = () => { closeModal(); res(true); };
+      m.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { closeModal(); res(false); });
+    });
+  });
+}
+function showCtx(e, items) {
+  const ctx = $('#ctx');
+  ctx.innerHTML = items.map((it, i) => it ? `<div class="it" data-i="${i}" style="${it[2] ? 'opacity:.4' : ''}"><span>${esc(it[0])}</span><span class="muted">${it[3] || ''}</span></div>` : '<hr>').join('');
+  ctx.style.display = 'block';
+  ctx.style.left = Math.min(e.clientX, innerWidth - 220) + 'px'; ctx.style.top = Math.min(e.clientY, innerHeight - ctx.offsetHeight - 10) + 'px';
+  ctx.onclick = ev => { const d = ev.target.closest('.it'); if (!d) return; const it = items[+d.dataset.i]; if (it[2]) return; hideCtx(); it[1](); };
+}
+function hideCtx() { $('#ctx').style.display = 'none'; }
+document.addEventListener('mousedown', e => { if (!e.target.closest('#ctx')) hideCtx(); if (!e.target.closest('#menubar')) document.querySelectorAll('#menubar .m').forEach(m => m.classList.remove('open')); });
+
+// ---------- 导出 ----------
+function exportDialog(defaultRange) {
+  const selN = S.sel.size;
+  const range = defaultRange || (selN > 1 ? 'sel' : S.source.type === 'coll' ? 'coll' : 'result');
+  openModal(`<div class="mh">导出原文件</div><div class="mb">
+    <div class="fieldset"><div class="t">范围</div>
+      <label class="opt"><input type="radio" name="r" value="sel" ${range === 'sel' ? 'checked' : ''}>所选照片（${selN} 张）</label>
+      <label class="opt"><input type="radio" name="r" value="result" ${range === 'result' ? 'checked' : ''}>当前结果（${S.result.length} 张）</label>
+      <label class="opt"><input type="radio" name="r" value="coll" ${range === 'coll' ? 'checked' : ''}>收藏夹 <select id="exColl">${collections.map(c => `<option value="${c.id}" ${S.source.type === 'coll' && S.source.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label></div>
+    <div class="fieldset"><div class="t">文件</div>
+      <label class="opt"><input type="radio" name="k" value="raw">只导出 RAW（没有 RAW 的导出 JPEG）</label>
+      <label class="opt"><input type="radio" name="k" value="jpg">只导出 JPEG（没有 JPEG 的导出 RAW）</label>
+      <label class="opt"><input type="radio" name="k" value="both" checked>两者都要</label></div>
+    <div class="fieldset"><div class="t">目录结构</div>
+      <label class="opt"><input type="radio" name="d" value="flat" checked>平铺到一个文件夹</label>
+      <label class="opt"><input type="radio" name="d" value="coll">按收藏夹分子文件夹</label>
+      <label class="opt"><input type="radio" name="d" value="orig">保持原目录</label></div>
+    <div class="fieldset"><div class="t">目标</div><div style="display:flex;gap:6px"><input value="~/Pictures/精修" style="flex:1"><button class="btn">选择…</button></div>
+      <div class="muted" style="margin-top:4px">只复制，不改动原文件；目标已有同名文件时自动改名，绝不覆盖。</div></div>
+    <div class="fieldset" id="exNeed"></div></div>
+    <div class="mf"><button class="btn" data-close>取消</button><button class="btn primary" id="exOk">导出</button></div>`, m => {
+    const ids = () => { const r = m.querySelector('input[name=r]:checked').value;
+      if (r === 'sel') return [...S.sel]; if (r === 'result') return [...S.result];
+      const c = collById(+m.querySelector('#exColl').value); return c ? [...c.ids].filter(id => P[id] && visible(P[id])) : []; };
+    const update = () => {
+      const list = ids().map(id => P[id]);
+      const vols = {}; let offline = 0;
+      list.forEach(p => { const on = presentLocs(p).find(l => volById(l.vol).online); if (on) vols[on.vol] = (vols[on.vol] || 0) + 1; else { offline++; const l = presentLocs(p)[0]; if (l) vols[l.vol + '!'] = (vols[l.vol + '!'] || 0) + 1; } });
+      m.querySelector('#exNeed').innerHTML = `<div class="t">需要的卷</div>${Object.entries(vols).map(([k, n]) => { const off = k.endsWith('!'); const v = volById(k.replace('!', ''));
+        return `<div class="loc"><span class="dot ${off ? 'offline' : 'online'}" style="width:8px;height:8px;border-radius:50%;display:inline-block"></span>${esc(v.name)} · ${n} 张${off ? ' <span style="color:var(--warn)">离线，请插入</span>' : ''}</div>`; }).join('') || '<div class="muted">—</div>'}
+        ${offline ? `<label class="opt"><input type="checkbox" id="exSkip" checked>跳过离线卷上的 ${offline} 张，只导出在线的 ${list.length - offline} 张</label>` : ''}`;
+      m.querySelector('#exOk').textContent = `导出 ${list.length - (offline && m.querySelector('#exSkip')?.checked !== false ? offline : 0)} 张`;
+    };
+    m.addEventListener('change', update); update();
+    m.querySelector('#exOk').onclick = () => {
+      const skip = m.querySelector('#exSkip')?.checked !== false;
+      const list = ids().map(id => P[id]).map(p => [p, presentLocs(p).find(l => volById(l.vol).online)]).filter(([p, l]) => l || !skip);
+      // 读不到的原片：这张导出失败、单独列出，并把这个位置改成历史位置。其余照片照常导出。
+      const failed = list.filter(([p, l]) => l && isGone(p, l.vol));
+      const byVol = {}; failed.forEach(([p, l]) => (byVol[l.vol] ??= []).push(p.id));
+      Object.entries(byVol).forEach(([vid, ids]) => markGone(vid, ids));
+      closeModal();
+      toast(`导出 ${list.length - failed.length} 张到 ~/Pictures/精修（原型）${failed.length ? `；${failed.length} 张原片已不在：${failed.map(([p]) => p.name).join('、')}，位置已改为历史` : ''}`);
+      if (failed.length) { renderAll(); renderGrid(); }
+    };
+  });
+}
+
+// ---------- 卷：清卡检查、移除、改名 ----------
+function clearCardCheck(v) {
+  const ps = photos.filter(p => visible(p) && p.locations.some(l => l.vol === v.id && isPresent(l)));
+  // 副本信息来自上次扫描，可能过时：在线卷上的副本现场核对一下文件还在不在（只查这些文件，很快）；
+  // 离线卷上的副本没法核对，单独标出来。核对时发现已经不在的副本，顺手改成历史位置。
+  let verified = 0, unverified = 0; const goneCopies = {};
+  ps.forEach(p => {
+    const others = p.locations.filter(l => isPresent(l) && l.vol !== v.id);
+    const onlineOk = others.filter(l => volById(l.vol).online && !isGone(p, l.vol));
+    others.filter(l => volById(l.vol).online && isGone(p, l.vol)).forEach(l => (goneCopies[l.vol] ??= []).push(p.id));
+    if (onlineOk.length) verified++; else if (others.some(l => !volById(l.vol).online)) unverified++;
+  });
+  const goneN = Object.values(goneCopies).reduce((a, b) => a + b.length, 0);
+  Object.entries(goneCopies).forEach(([vid, ids]) => markGone(vid, ids));
+  const nc = ps.filter(p => noOtherCopy(p, v.id));
+  const important = p => p.rating > 0 || p.flag === 'pick' || inAnyColl(p);
+  const imp = nc.filter(important);
+  let onlyImp = imp.length > 0;
+  openModal(`<div class="mh">清卡检查：${esc(v.name)}</div><div class="mb">
+    <div>这个卷上有 <b>${ps.length.toLocaleString()}</b> 张照片：</div>
+    ${goneN ? `<div class="loc" style="color:var(--warn)">核对时发现 ${goneN} 张照片在其他卷上的副本已经不在，已按没有副本计算</div>` : ''}
+    <div class="loc">✅ ${verified.toLocaleString()} 张在在线卷上有副本（已现场核对文件还在）</div>
+    ${unverified ? `<div class="loc">☑️ ${unverified.toLocaleString()} 张的副本只在离线卷上：按上次扫描结果计算，没法现场核对</div>` : ''}
+    <div class="loc">${nc.length ? '⚠️' : '✅'} <b>${nc.length.toLocaleString()}</b> 张没有其他副本${nc.length ? `，其中 ${nc.filter(p => p.rating > 0).length} 张已打星、${nc.filter(p => p.flag === 'pick').length} 张已 Pick、${nc.filter(inAnyColl).length} 张在收藏夹里` : ''}</div>
+    ${nc.length ? `<label class="opt" style="margin-top:8px"><input type="checkbox" id="onlyImp" ${onlyImp ? 'checked' : ''}>只看已打星 / Pick / 在收藏夹里的</label><div class="minigrid" id="ncGrid"></div>` : '<p>可以放心清空这张卡。</p>'}
+    <p class="muted">移除卷只影响软件里的记录：照片、星级、标签、收藏夹和预览都保留；没有其他副本的照片会从常规列表隐藏，进入「无卷关联照片」。卡上的文件不会被动。</p></div>
+    <div class="mf">${nc.length ? `<button class="btn left" id="copyNc" ${v.online ? '' : 'disabled title="卷离线，插上后才能复制"'}>复制缺副本照片到…</button>` : ''}<button class="btn" data-close>关闭</button><button class="btn ${nc.length ? 'danger' : 'primary'}" id="rmV">${nc.length ? '仍然移除卷…' : '移除卷…'}</button></div>`, m => {
+    const draw = () => { const g = m.querySelector('#ncGrid'); if (!g) return; const list = (onlyImp ? imp : nc).slice(0, 160);
+      g.innerHTML = list.map(p => `<div class="mc" style="width:${Math.round(54 * p.w / p.h)}px;background:${phStyle(p)}" title="${p.name}">${badges(p, true)}</div>`).join('') + ((onlyImp ? imp : nc).length > 160 ? `<span class="muted">… 还有 ${(onlyImp ? imp : nc).length - 160} 张</span>` : ''); };
+    draw();
+    const oi = m.querySelector('#onlyImp'); if (oi) oi.onchange = () => { onlyImp = oi.checked; draw(); };
+    const cp = m.querySelector('#copyNc');
+    if (cp) cp.onclick = () => {
+      const targets = volumes.filter(x => x.status === 'active' && x.id !== v.id && x.online);
+      if (!targets.length) return toast('没有其他在线的卷可以复制过去');
+      const t = targets[0];
+      nc.forEach(p => p.locations.push({ vol: t.id, path: `${t.root}/从${v.name}补副本/${p.name}`, status: 'present' }));
+      closeModal(); toast(`已把 ${nc.length} 张复制到「${t.name}」并重扫，它们现在有副本了（原型）`); renderAll(); clearCardCheck(v);
+    };
+    m.querySelector('#rmV').onclick = () => { closeModal(); removeVolumeFlow(v, nc.length); };
+  }, true);
+}
+async function removeVolumeFlow(v, ncKnown) {
+  const ps = photos.filter(p => visible(p) && p.locations.some(l => l.vol === v.id && isPresent(l)));
+  const nc = ncKnown ?? ps.filter(p => noOtherCopy(p, v.id)).length;
+  const ok = await confirmBox(`移除卷「${v.name}」？`,
+    `<p>通常是这张卡已经清空或准备清空。</p>
+     <p>· ${ps.length - nc} 张在其他卷上有副本：照常显示。<br>· <b>${nc}</b> 张没有其他副本：从常规列表和搜索中隐藏，进入「图库 → 无卷关联照片…」，预览、星级、标签、收藏夹都保留。</p>
+     <p class="muted">卡上的文件不会被动。以后再插上这张卡会被当作新卷，没删掉的照片会对回原来的记录。</p>`, '移除卷', true);
+  if (!ok) return;
+  v.status = 'removed'; v.removedAt = '今天';
+  photos.forEach(p => p.locations.forEach(l => { if (l.vol === v.id) l.status = 'historical'; }));
+  toast(`已移除「${v.name}」；${nc} 张照片进入「无卷关联照片」`);
+  if (S.source.type === 'vol' && S.source.id === v.id) setSource({ type: 'all' });
+  else { recompute(); renderAll(); renderGrid(); renderView(); }
+}
+async function renameVolume(v) { const n = await askText('卷名', v.name); if (n) { v.name = n; renderAll(); } }
+
+// ---------- 原片被手动删除（模拟） ----------
+// 软件平时只看卷有没有挂载，不逐个检查原片，所以在 Finder 里删掉原片后，软件暂时不知道。
+// 发现的时机只有三个：重新扫描（含卷插上时的自动重扫）、导出或 100% 放大时读不到、清卡检查现场核对副本。
+const goneOnDisk = new Map(); // volId → Set(photoId)，只有“磁盘”知道，软件不知道
+const isGone = (p, volId) => goneOnDisk.get(volId)?.has(p.id) ?? false;
+function simulateFinderDelete(v) {
+  const cands = S.result.map(id => P[id]).filter(p => p.locations.some(l => l.vol === v.id && isPresent(l)) && !isGone(p, v.id));
+  const picked = cands.slice(0, 5);
+  if (!picked.length) return toast('当前结果里没有可删的照片');
+  if (!goneOnDisk.has(v.id)) goneOnDisk.set(v.id, new Set());
+  picked.forEach(p => goneOnDisk.get(v.id).add(p.id));
+  toast(`（模拟）已在 Finder 里删掉 ${picked.map(p => p.name).join('、')}：软件还不知道，照常显示`);
+}
+// 把读不到原片的位置改成历史位置，返回其中因此变成无卷关联的张数。
+function markGone(volId, ids) {
+  let orphaned = 0;
+  ids.forEach(id => { const p = P[id]; if (!p) return; p.locations.forEach(l => { if (l.vol === volId) l.status = 'historical'; }); if (!visible(p)) orphaned++; });
+  goneOnDisk.get(volId)?.forEach(id => ids.includes(id) && goneOnDisk.get(volId).delete(id));
+  return orphaned;
+}
+function rescanVolume(v, quiet) {
+  if (!v.online) return toast('卷离线，插上后才能扫描');
+  const gone = [...(goneOnDisk.get(v.id) || [])].filter(id => P[id]?.locations.some(l => l.vol === v.id && l.status === 'present'));
+  v.lastScan = '刚刚';
+  if (!gone.length) { if (!quiet) toast(`已重新扫描「${v.name}」：没有新增、变化或消失的文件`); renderHead(); return; }
+  const orphaned = markGone(v.id, gone);
+  toast(`重新扫描「${v.name}」：${gone.length} 张原片已不在，位置改为历史${orphaned ? `；其中 ${orphaned} 张没有其他副本，移到「无卷关联照片」` : '；它们在别的卷上还有副本，照常显示'}。星级、标签、预览都保留`);
+  recompute(); renderAll(); renderGrid(); renderView();
+}
+
+// ---------- 无卷关联照片 ----------
+function orphanWindow() {
+  const orphans = photos.filter(p => !visible(p));
+  const groups = {};
+  orphans.forEach(p => { const l = p.locations[p.locations.length - 1]; const k = l ? l.vol : '?'; (groups[k] ??= []).push(p); });
+  const sel = new Set();
+  openModal(`<div class="mh">无卷关联照片</div><div class="mb">
+    <p class="muted">这些照片所在的卷都已移除，或重扫时文件已经不在。它们不出现在常规列表、搜索和收藏夹里，但预览、星级、标签都还在。<br>在这里删除会真正删掉照片记录和预览，<b>卡和盘上的文件不受影响</b>；以后再扫到同一张照片，会作为新照片导入。</p>
+    ${orphans.length ? Object.entries(groups).map(([vid, list]) => { const v = volById(vid);
+      return `<div class="ogroup"><div class="oh"><b>${esc(v ? v.name : '未知卷')}</b><span class="muted">${v?.removedAt ? '移除于 ' + v.removedAt + ' · ' : ''}${list.length} 张 · 其中 ${list.filter(p => p.rating > 0).length} 张已打星、${list.filter(p => p.flag === 'pick').length} 张 Pick、${list.filter(inAnyColl).length} 张在收藏夹里</span><span style="flex:1"></span><button class="btn" data-gsel="${vid}">全选本组</button></div>
+        <div class="minigrid">${list.map(p => `<div class="mc" data-oid="${p.id}" style="width:${Math.round(54 * p.w / p.h)}px;background:${phStyle(p)}" title="${p.name} · ${dayKey(p.ts)}">${badges(p, true)}</div>`).join('')}</div></div>`; }).join('') : '<p>没有无卷关联的照片。</p>'}
+    </div><div class="mf"><span class="muted left" id="oCount">未选择</span><button class="btn" data-close>关闭</button><button class="btn danger" id="oDel" disabled>删除所选…</button></div>`, m => {
+    const sync = () => { m.querySelectorAll('.mc[data-oid]').forEach(c => c.classList.toggle('sel', sel.has(+c.dataset.oid))); m.querySelector('#oCount').textContent = sel.size ? `已选 ${sel.size} 张` : '未选择'; m.querySelector('#oDel').disabled = !sel.size; };
+    m.querySelectorAll('.mc[data-oid]').forEach(c => c.onclick = e => { const id = +c.dataset.oid; if (!(e.metaKey || e.shiftKey)) { if (!sel.has(id) || sel.size > 1) { sel.clear(); sel.add(id); } else sel.delete(id); } else sel.has(id) ? sel.delete(id) : sel.add(id); sync(); });
+    m.querySelectorAll('[data-gsel]').forEach(b => b.onclick = () => { groups[b.dataset.gsel].forEach(p => sel.add(p.id)); sync(); });
+    m.querySelector('#oDel').onclick = async () => {
+      const ids = [...sel]; const n = ids.length;
+      const ok = await confirmBox(`删除 ${n} 张照片的记录和预览？`, '<p>删除后无法撤销。卡和盘上的源文件不受影响。</p>', `删除 ${n} 张`, true);
+      if (!ok) return orphanWindow();
+      ids.forEach(id => { const p = P[id]; photos.splice(photos.indexOf(p), 1); delete P[id]; collections.forEach(c => c.ids.delete(id)); });
+      // 已移除的卷不再有任何照片时，一并删除。
+      volumes.filter(v => v.status === 'removed' && !photos.some(p => p.locations.some(l => l.vol === v.id))).forEach(v => volumes.splice(volumes.indexOf(v), 1));
+      S.undo = S.undo.filter(op => op.kind !== 'photo' || op.before.every(([id]) => P[id]));
+      toast(`已删除 ${n} 张照片的记录和预览`); renderAll(); orphanWindow();
+    };
+  }, true);
+}
+
+// ---------- 插卡导入（模拟） ----------
+function simulateInsert() {
+  if (volumes.some(v => v.id === 'E')) return toast('原型里只模拟一张新卡');
+  $('#banner').innerHTML = `<div class="card"><b>检测到新卷</b><div class="muted" style="margin:4px 0 10px">Untitled · 64 GB · exFAT · 存储卡</div>
+    <div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn" id="bnIgnore">忽略</button><button class="btn primary" id="bnAdd">添加…</button></div></div>`;
+  $('#bnIgnore').onclick = () => $('#banner').innerHTML = '';
+  $('#bnAdd').onclick = () => {
+    $('#banner').innerHTML = '';
+    openModal(`<div class="mh">添加卷</div><div class="mb">
+      <div class="fieldset"><div class="t">名字</div><input id="vName" style="width:100%" value="卡 E 64G"></div>
+      <div class="fieldset"><div class="t">扫描哪个文件夹</div><div style="display:flex;gap:6px"><input id="vRoot" style="flex:1" value="DCIM"><button class="btn">选择…</button></div>
+      <div class="muted" style="margin-top:4px">存储卡默认 DCIM；外置盘每次手动选。</div></div>
+      <p class="muted">导入只建索引、生成预览，不复制原文件，也不改动卡上的任何东西。</p></div>
+      <div class="mf"><button class="btn" data-close>取消</button><button class="btn primary" id="vOk">开始导入</button></div>`, m => {
+      m.querySelector('#vOk').onclick = () => { const name = m.querySelector('#vName').value.trim() || '新卡'; const root = m.querySelector('#vRoot').value.trim() || 'DCIM'; closeModal(); startImport(name, root); };
+    });
+  };
+}
+function startImport(name, root) {
+  volumes.push({ id: 'E', name, kind: 'card', online: true, status: 'active', capacity: '64 GB', root, lastScan: '正在扫描' });
+  const batch = batchSeq++;
+  const total = 240;
+  const all = genTrip({ vol: 'E', count: total, start: '2026-11-15', days: 3, places: ['北京 · 故宫', '北京 · 景山'], startNo: 9300, hues: [15, 45, 210], batch, trip: '2026-11 北京' });
+  // 先从照片列表里拿出来，按批次放回，模拟“照片边扫边出现”。
+  all.forEach(p => { photos.splice(photos.indexOf(p), 1); p.preview = 'pending'; p.people = []; });
+  S.tasks = [{ name: '扫描', done: 0, total }, { name: '预览', done: 0, total }, { name: 'OCR', done: 0, total, paused: false }, { name: '人物', done: 0, total, paused: false }];
+  setSource({ type: 'vol', id: 'E' });
+  let scanned = 0, previewed = 0, ocr = 0, face = 0;
+  const timer = setInterval(() => {
+    if (scanned < total) { all.slice(scanned, scanned + 30).forEach(p => photos.push(p)); scanned = Math.min(total, scanned + 30); }
+    if (previewed < scanned) { all.slice(previewed, previewed + 18).forEach(p => p.preview = 'done'); previewed = Math.min(scanned, previewed + 18); }
+    const tO = S.tasks[2], tF = S.tasks[3];
+    if (previewed === total && !tO.paused) ocr = Math.min(total, ocr + 40);
+    if (previewed === total && !tF.paused) face = Math.min(total, face + 25);
+    S.tasks[0].done = scanned; S.tasks[1].done = previewed; tO.done = ocr; tF.done = face;
+    if (S.source.type === 'vol' && S.source.id === 'E') { const keep = S.focus; recompute(); if (keep) S.focus = keep; renderGrid(); renderHead(); renderFilterbar(); }
+    renderSidebar(); renderStatus();
+    if (scanned === total && previewed === total && ocr === total && face === total) {
+      clearInterval(timer); volById('E').lastScan = '刚刚';
+      all.forEach(p => { if (p.portrait && rnd() < 0.6) p.people = [pick(PEOPLE)]; });
+      S.tasks = null; renderAll(); toast(`「${name}」导入完成：${total} 张，预览、OCR、人物识别都已完成`);
+    }
+  }, 450);
+}
+function taskPanel() {
+  if (!S.tasks) return;
+  openModal(`<div class="mh">后台任务</div><div class="mb">${S.tasks.map((t, i) => `<div class="opt" style="justify-content:space-between"><span><b>${t.name}</b> ${t.done}/${t.total}</span>${i >= 2 ? `<button class="btn" data-t="${i}">${t.paused ? '继续' : '暂停'}</button>` : '<span class="muted">选片时交互请求优先</span>'}</div>`).join('')}</div>
+    <div class="mf"><button class="btn" data-close>关闭</button></div>`, m => {
+    m.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { const t = S.tasks?.[+b.dataset.t]; if (t) { t.paused = !t.paused; renderStatus(); taskPanel(); } });
+  });
+}
+
+// ---------- 标签设置、快捷键 ----------
+function labelSettings() {
+  openModal(`<div class="mh">标签设置</div><div class="mb"><p class="muted">顺序决定快捷键：第 1–4 个对应 6–9，全部对应 ⌥1–⌥9。名字留空表示不用这个位置。删掉名字只会把这个标签从所有照片上去掉。</p>
+    ${labels.map((l, i) => `<div class="labelrow"><span class="sw" data-c="${i}" style="background:${l.color}" title="点击换颜色"></span><input data-n="${i}" value="${esc(l.name)}" placeholder="（未使用）" style="flex:1"><span class="muted" style="width:70px">${i < 4 ? `<kbd>${i + 6}</kbd> ` : ''}<kbd>⌥${i + 1}</kbd></span></div>`).join('')}</div>
+    <div class="mf"><button class="btn primary" id="lOk">完成</button></div>`, m => {
+    m.querySelectorAll('[data-c]').forEach(s => s.onclick = () => { const l = labels[+s.dataset.c]; l.color = LABEL_PALETTE[(LABEL_PALETTE.indexOf(l.color) + 1) % LABEL_PALETTE.length]; s.style.background = l.color; });
+    m.querySelector('#lOk').onclick = () => {
+      m.querySelectorAll('[data-n]').forEach(inp => { const l = labels[+inp.dataset.n]; const n = inp.value.trim(); if (!n && l.name) photos.forEach(p => p.labels.delete(l.id)); l.name = n; });
+      Object.values(S.filters).forEach(f => [...f.labels].forEach(id => { if (!labelById(id).name) f.labels.delete(id); }));
+      closeModal(); renderAll(); renderGrid(); renderView();
+    };
+  });
+}
+function showKeys() {
+  openModal(`<div class="mh">快捷键</div><div class="mb"><table class="keys">${KEYMAP.map(([k, a]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(a)}</td></tr>`).join('')}</table>
+    <p class="muted">原型在浏览器里运行：⌘1–⌘3 等组合会被浏览器占用，视图切换请用空格、C 或工具栏。文本框获得焦点时，单键快捷键让位给输入。</p></div>
+    <div class="mf"><button class="btn primary" data-close>好</button></div>`);
+}
+
+// ---------- 菜单栏 ----------
+const MENUS = [
+  ['<b>PhotoAI</b>', [['关于这个原型', () => openModal(`<div class="mh">PhotoAI v2 原型</div><div class="mb"><p>可点击原型，只模拟界面和交互：照片是生成的色块，数据只在内存里，刷新页面即重置。</p><p>右下角的「走查清单」是要验证的问题，走一遍后把意见告诉 Claude。</p></div><div class="mf"><button class="btn primary" data-close>好</button></div>`)]]],
+  ['文件', [['（原型）模拟插入一张新卡', simulateInsert], null, ['导出…', () => exportDialog(), '⌘E']]],
+  ['图库', [['无卷关联照片…', orphanWindow], null, ['标签设置…', labelSettings], ['新建收藏夹…', () => newCollectionFlow([])]]],
+  ['照片', [['加入收藏夹…', addToCollectionDialog, '⇧B'], ['全选当前结果', () => { S.sel = new Set(S.result); syncSelClasses(); renderInspector(); renderStatus(); }, '⌘A'], null, ['撤销', undo, '⌘Z'], ['重做', redo, '⇧⌘Z']]],
+  ['显示', [['网格', () => setView('grid'), '空格'], ['单张', () => setView('single'), '空格'], ['比较', () => setView('compare'), 'C'], null, ['显示 / 隐藏检查器', () => $('#inspBtn').click()]]],
+  ['帮助', [['快捷键…', showKeys, '?'], ['走查清单', () => { $('#checklist').classList.remove('min', 'hidden'); }]]],
+];
+function renderMenubar() {
+  $('#menubar').innerHTML = MENUS.map(([t, items], i) => `<div class="m" data-m="${i}">${t}<div class="drop">${items.map((it, j) => it ? `<div class="it" data-mi="${i}:${j}"><span>${esc(it[0])}</span><span class="muted">${it[2] || ''}</span></div>` : '<hr>').join('')}</div></div>`).join('') + `<span class="proto">原型 · 数据只在内存里，刷新即重置</span>`;
+}
+$('#menubar').addEventListener('click', e => {
+  const it = e.target.closest('.it');
+  if (it) { const [i, j] = it.dataset.mi.split(':').map(Number); document.querySelectorAll('#menubar .m').forEach(m => m.classList.remove('open')); MENUS[i][1][j][1](); return; }
+  const m = e.target.closest('.m'); if (!m) return;
+  const was = m.classList.contains('open');
+  document.querySelectorAll('#menubar .m').forEach(x => x.classList.remove('open'));
+  if (!was) m.classList.add('open');
+});
+
+// ---------- 走查清单 ----------
+const CHECKS = [
+  '典型场景：卡 A → 时间倒序 → 空格进单张、打开 Caps Lock，边看边按 1–5 打星、6–9 打标签',
+  '回到网格，在筛选条点「经典」「★5」，打星过程中结果是否保持不变、「刷新结果」是否顺手',
+  '⌘A 全选 → ⇧B 新建收藏夹 → 在侧栏打开它，用 ⌫ 移出几张、再从别处按 B 补几张',
+  '⌘E 导出：三个选择是否够用，离线卷的提示是否清楚',
+  '比较：选 2–4 张按 C，← → 切焦点，打星，两张时试 ⇧P',
+  '切换侧栏各项再切回来：筛选条件是否各自记住；切换视图后滚动位置和选择是否还在',
+  '卷：备份盘 2 / 卡 B 的在线、离线；右键或卷信息条做清卡检查',
+  '卡 A 清卡检查 → 复制缺副本照片或仍然移除 → 「图库 → 无卷关联照片…」里删除',
+  '「文件 → 模拟插入一张新卡」：导入提示、照片边扫边出现、状态栏后台任务',
+  '「图库 → 标签设置…」改标签名和颜色',
+  '顶部只剩一行标题：按 \\ 或工具栏「筛选」收起筛选条，生效的条件会显示在标题行',
+  '单张视图：没有顶部栏，信息条浮在底部、鼠标不动 2 秒后淡出；按 F 进入专注模式',
+  '卡 A 标题行「⋯」→（原型）在 Finder 里删掉 5 张原片 → 导出或重新扫描，看软件怎么发现',
+];
+function renderChecklist() {
+  let done = {}; try { done = JSON.parse(localStorage.getItem('photoai-proto-checks') || '{}'); } catch (e) { }
+  const n = CHECKS.filter((_, i) => done[i]).length;
+  $('#checklist').innerHTML = `<div class="ch"><span>走查清单 ${n}/${CHECKS.length}</span><span>▾</span></div><div class="cb">${CHECKS.map((c, i) => `<label><input type="checkbox" data-ck="${i}" ${done[i] ? 'checked' : ''}><span>${esc(c)}</span></label>`).join('')}</div>`;
+}
+$('#checklist').addEventListener('click', e => {
+  if (e.target.closest('.ch')) { $('#checklist').classList.toggle('min'); return; }
+  const ck = e.target.closest('[data-ck]'); if (!ck) return;
+  let done = {}; try { done = JSON.parse(localStorage.getItem('photoai-proto-checks') || '{}'); } catch (er) { }
+  done[ck.dataset.ck] = ck.checked; try { localStorage.setItem('photoai-proto-checks', JSON.stringify(done)); } catch (er) { }
+  const min = $('#checklist').classList.contains('min'); renderChecklist(); if (min) $('#checklist').classList.add('min');
+});
+
+// ---------- 启动 ----------
+function renderAll() { renderSidebar(); renderHead(); renderFilterbar(); renderInspector(); renderStatus(); }
+renderMenubar(); renderChecklist();
+recompute(false);
+renderAll(); renderGrid(); renderView();
+</script>
+</body>
+</html>
