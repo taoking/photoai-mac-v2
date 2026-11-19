@@ -14,8 +14,18 @@ struct SingleView: View {
             ZStack(alignment: .bottom) {
                 Color(nsColor: .underPageBackgroundColor)
                 if let id = model.focusedPhotoID {
-                    PreviewImage(id: id, reportsPageTurn: true)
-                        .padding(16)
+                    if model.zoomed {
+                        ZoomedPhoto(id: id) { model.toggleZoom() }
+                    } else {
+                        GeometryReader { geometry in
+                            PreviewImage(id: id, reportsPageTurn: true)
+                                .padding(16)
+                                .contentShape(Rectangle())
+                                .gesture(SpatialTapGesture().onEnded { value in
+                                    model.toggleZoom(at: zoomPoint(value.location, in: geometry.size, id: id))
+                                })
+                        }
+                    }
                     if model.showInfoOverlay {
                         InfoOverlay(id: id)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -34,6 +44,19 @@ struct SingleView: View {
         }
         .onChange(of: model.marksVersion) { pokeBar() }
         .onAppear { pokeBar() }
+    }
+
+    /// 单击的位置换算成照片上的位置（0–1）：照片按原比例放在内边距 16 的区域正中。
+    private func zoomPoint(_ location: CGPoint, in size: CGSize, id: PhotoID) -> CGPoint {
+        let area = CGRect(origin: .zero, size: size).insetBy(dx: 16, dy: 16)
+        // 按画出来的那张图的比例算：机内 16:9 裁切的照片，记录的尺寸是 RAW 的 3:2，预览是 16:9。
+        let shown = model.previews.cached(id) ?? model.thumbnails.cached(id)
+        let ratio = shown.map { $0.size.width / max($0.size.height, 1) } ?? CGFloat(model.photo(id)?.aspectRatio ?? 1.5)
+        let width = min(area.width, area.height * ratio)
+        let height = width / ratio
+        let rect = CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
+        guard rect.width > 0, rect.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
+        return CGPoint(x: min(max((location.x - rect.minX) / rect.width, 0), 1), y: min(max((location.y - rect.minY) / rect.height, 0), 1))
     }
 
     private func pokeBar() {
@@ -240,7 +263,7 @@ struct CompareView: View {
                 Button { model.setView(.grid) } label: { Image(systemName: "square.grid.2x2") }
                     .buttonStyle(.borderless)
                 Text("比较 \(ids.count) 张").font(.headline)
-                Text("← → 切换焦点 · 打星、标签、标记作用于蓝框" + (ids.count == 2 ? " · ⇧P 蓝框 Pick、另一张 Reject" : "") + " · F 专注")
+                Text("← → 切换焦点 · 打星、标签、标记作用于蓝框" + (ids.count == 2 ? " · ⇧P 蓝框 Pick、另一张 Reject" : "") + " · Z 同步放大 · F 专注")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }
@@ -271,7 +294,12 @@ struct CompareCell: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PreviewImage(id: id).padding(6)
+            if model.zoomed {
+                ZoomedPhoto(id: id, noteAtBottom: true) { if let index = model.compareIDs.firstIndex(of: id) { model.compareFocus = index } }
+                    .padding(2)
+            } else {
+                PreviewImage(id: id).padding(6)
+            }
             if let photo = model.photo(id) {
                 HStack(spacing: 6) {
                     Text(photo.baseName).font(.caption.bold())

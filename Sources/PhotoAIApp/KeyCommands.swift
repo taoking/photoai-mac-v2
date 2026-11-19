@@ -12,10 +12,11 @@ enum PhotoCommand: Hashable {
     case flag(Flag)
     /// 两张比较时：焦点格 Pick、另一张 Reject。
     case pickFocusRejectOther
-    case toggleSingle, compare, focusMode, escape, toggleFilterBar, infoOverlay
+    case toggleSingle, compare, focusMode, escape, toggleFilterBar, infoOverlay, zoom
     case showGrid, showSingle, showCompare
     case addToLastCollection, addToCollection, removeFromCollection
     case selectAll, undo, redo
+    case export
     case showShortcuts
 
     struct Shortcut {
@@ -47,6 +48,7 @@ enum PhotoCommand: Hashable {
         case .escape: Shortcut(key: .escape, display: "Esc")
         case .toggleFilterBar: Shortcut(key: "\\", display: "\\")
         case .infoOverlay: Shortcut(key: "i", display: "I")
+        case .zoom: Shortcut(key: "z", display: "Z")
         case .showGrid: Shortcut(key: "1", modifiers: .command, display: "⌘1")
         case .showSingle: Shortcut(key: "2", modifiers: .command, display: "⌘2")
         case .showCompare: Shortcut(key: "3", modifiers: .command, display: "⌘3")
@@ -56,6 +58,7 @@ enum PhotoCommand: Hashable {
         case .selectAll: Shortcut(key: "a", modifiers: .command, display: "⌘A")
         case .undo: Shortcut(key: "z", modifiers: .command, display: "⌘Z")
         case .redo: Shortcut(key: "z", modifiers: [.command, .shift], display: "⇧⌘Z")
+        case .export: Shortcut(key: "e", modifiers: .command, display: "⌘E")
         case .showShortcuts: Shortcut(key: "?", display: "?")
         }
     }
@@ -77,9 +80,10 @@ enum PhotoCommand: Hashable {
         case .toggleSingle: "网格 ↔ 单张"
         case .compare: "比较所选 2–4 张"
         case .focusMode: "专注模式"
-        case .escape: "退出专注模式 / 回到网格"
+        case .escape: "退出放大 / 专注模式 / 回到网格"
         case .toggleFilterBar: "显示 / 隐藏筛选条"
         case .infoOverlay: "单张视图的参数浮层"
+        case .zoom: "放大到 100% / 适合窗口"
         case .showGrid: "网格"
         case .showSingle: "单张"
         case .showCompare: "比较"
@@ -89,6 +93,7 @@ enum PhotoCommand: Hashable {
         case .selectAll: "全选当前结果"
         case .undo: "撤销"
         case .redo: "重做"
+        case .export: "导出…"
         case .showShortcuts: "快捷键…"
         }
     }
@@ -96,13 +101,13 @@ enum PhotoCommand: Hashable {
     /// 速查表的分组和顺序。
     static let reference: [(String, [PhotoCommand])] = [
         ("浏览", [.previous, .next, .rowUp, .rowDown, .toggleSingle, .compare, .focusMode, .escape, .toggleFilterBar, .infoOverlay,
-                .showGrid, .showSingle, .showCompare]),
+                .zoom, .showGrid, .showSingle, .showCompare]),
         ("打星与标记", [.rate(1), .rate(2), .rate(3), .rate(4), .rate(5), .rate(0),
                      .flag(.pick), .flag(.reject), .flag(.none), .pickFocusRejectOther]),
         ("标签", (0..<4).map { .toggleLabel(slot: $0, viaOption: false) } + (0..<9).map { .toggleLabel(slot: $0, viaOption: true) }
             + [.clearLabels]),
         ("收藏夹", [.addToLastCollection, .addToCollection, .removeFromCollection]),
-        ("其他", [.selectAll, .undo, .redo, .showShortcuts])
+        ("其他", [.selectAll, .undo, .redo, .export, .showShortcuts])
     ]
 
     static let all: [PhotoCommand] = reference.flatMap(\.1)
@@ -209,6 +214,8 @@ struct PhotoCommands: Commands {
             item(.selectAll)
         }
         CommandMenu("图库") {
+            item(.export)
+            Divider()
             Button("新建收藏夹…") { model.beginNewCollection(adding: []) }
             Button("标签设置…") { model.activeSheet = .labelSettings }
         }
@@ -240,6 +247,7 @@ struct PhotoCommands: Commands {
             item(.toggleFilterBar)
             item(.focusMode)
             item(.infoOverlay)
+            item(.zoom, title: model.zoomed ? "适合窗口" : "放大到 100%")
             Button(model.showInspector ? "隐藏检查器" : "显示检查器") { model.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
         }

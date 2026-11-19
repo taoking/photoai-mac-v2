@@ -7,18 +7,19 @@ import PhotoAICore
 ///   在收藏夹里移出、撤销、补加 → 比较 → 标签设置。最后把应有的星级、标签、收藏夹写到 `PHOTOAI_SCENARIO_STATE`。
 /// - `PHOTOAI_SCENARIO=verify`：重新打开软件后，核对库里的值和上一次运行写下的一致，撤销记录是空的。
 /// - `PHOTOAI_SCENARIO=cull1000`：单张视图里连续打 1,000 次星（自动前进），记录 PF-6、PF-7 的分布。
+/// - `PHOTOAI_SCENARIO=export`：M3 的导出与 100% 放大，见 `Scenario+Export.swift`。
 ///
 /// 只用于临时的库（`PHOTOAI_LIBRARY_DIR`），会改动库里的星级、标签和收藏夹。
 /// 每一步都走 `perform(_:)`，和按键走的是同一条路。
 @MainActor
 final class ScenarioRunner {
-    private let model: AppModel
+    let model: AppModel
     private let mode: String
     /// 每一步做完调用传进来的 `done`。普通的步骤做完后停 0.35 秒（留时间给后台读库和界面刷新）。
     private var steps: [(String, (@escaping () -> Void) -> Void)] = []
     private var failures = 0
     private var passes = 0
-    private let snapshotDirectory = ProcessInfo.processInfo.environment["PHOTOAI_SNAPSHOT_DIR"].map { URL(fileURLWithPath: $0) }
+    let snapshotDirectory = ProcessInfo.processInfo.environment["PHOTOAI_SNAPSHOT_DIR"].map { URL(fileURLWithPath: $0) }
     private let statePath = ProcessInfo.processInfo.environment["PHOTOAI_SCENARIO_STATE"]
 
     init(model: AppModel, mode: String) {
@@ -35,6 +36,7 @@ final class ScenarioRunner {
         case "verify": buildVerify()
         case "cull1000": buildCull1000()
         case "filter": buildFilter()
+        case "export": buildExport()
         default:
             print("FAIL 未知的场景 \(mode)")
             exit(2)
@@ -42,7 +44,7 @@ final class ScenarioRunner {
         next()
     }
 
-    private func step(_ name: String, _ body: @escaping () -> Void) {
+    func step(_ name: String, _ body: @escaping () -> Void) {
         steps.append((name, { done in
             body()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { MainActor.assumeIsolated { done() } }
@@ -50,7 +52,7 @@ final class ScenarioRunner {
     }
 
     /// 自己决定什么时候结束的步骤。
-    private func asyncStep(_ name: String, _ body: @escaping (@escaping () -> Void) -> Void) {
+    func asyncStep(_ name: String, _ body: @escaping (@escaping () -> Void) -> Void) {
         steps.append((name, body))
     }
 
@@ -60,7 +62,7 @@ final class ScenarioRunner {
         body { [weak self] in self?.next() }
     }
 
-    private func check(_ condition: Bool, _ text: String) {
+    func check(_ condition: Bool, _ text: String) {
         if condition { passes += 1; print("PASS \(text)") } else { failures += 1; print("FAIL \(text)") }
         fflush(stdout)
     }
@@ -71,7 +73,7 @@ final class ScenarioRunner {
         exit(failures == 0 ? 0 : 1)
     }
 
-    private func snapshot(_ name: String) {
+    func snapshot(_ name: String) {
         guard let snapshotDirectory else { return }
         Measurements.snapshotMainWindow(to: snapshotDirectory.appendingPathComponent("\(name).png"))
     }

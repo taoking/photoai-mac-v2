@@ -1,7 +1,7 @@
 import Foundation
 import PhotoAICore
 
-// 命令行工具 photoai。rate / collect / find 在 M5 实现；M1 只有 exif，用来记录真实样片的身份字段。
+// 命令行工具 photoai。rate / collect / find 在 M5 实现；现在只有 exif（记录真实样片的身份字段）和验收用的 dev- 命令。
 let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "exif":
@@ -97,6 +97,51 @@ case "dev-import":
         semaphore.wait()
     } catch {
         print("打不开照片库：\(error)")
+        exit(1)
+    }
+case "dev-export":
+    // 验收用：把可见照片（或某个卷上的照片）导出到一个目录，走和软件一样的导出流程，打印结果和 PF-9 吞吐。
+    // 源文件只读；目标只复制、不覆盖。可用 PHOTOAI_LIBRARY_DIR 换库。
+    guard arguments.count >= 2 else {
+        print("用法：photoai dev-export <目标目录> [raw|jpeg|both] [flat|byCollection|original] [卷名|-] [张数|跳过:张数]")
+        exit(1)
+    }
+    do {
+        let library = try Library()
+        let volumes = try library.reader.volumes()
+        var mounts: [VolumeID: URL] = [:]
+        for info in MountedVolumes.list() {
+            if let volume = volumes.first(where: { $0.volumeUUID == info.uuid }) { mounts[volume.id] = info.url }
+        }
+        let files = arguments.count >= 3 ? ExportRequest.Files(rawValue: arguments[2]) ?? .both : .both
+        let layout = arguments.count >= 4 ? ExportRequest.Layout(rawValue: arguments[3]) ?? .flat : .flat
+        var scope = PhotoScope.all
+        if arguments.count >= 5, arguments[4] != "-" {
+            guard let volume = volumes.first(where: { $0.name == arguments[4] }) else {
+                print("没有叫“\(arguments[4])”的卷")
+                exit(1)
+            }
+            scope = .volume(volume.id)
+        }
+        var ids = try library.reader.photos(in: scope).map(\.id)
+        if arguments.count >= 6 {
+            let parts = arguments[5].split(separator: ":").compactMap { Int($0) }
+            if parts.count == 2 { ids = Array(ids.dropFirst(parts[0]).prefix(parts[1])) }
+            if parts.count == 1 { ids = Array(ids.prefix(parts[0])) }
+        }
+        let finder = OriginalFinder(mounts: mounts, volumeUUIDs: Dictionary(uniqueKeysWithValues: volumes.map { ($0.id, $0.volumeUUID) }))
+        let request = ExportRequest(photoIDs: ids, files: files, layout: layout, destination: URL(fileURLWithPath: arguments[1], isDirectory: true))
+        let report = try Exporter(library: library, finder: finder).run(request)
+        print(String(
+            format: "PF-9 导出：%d 张、%d 个文件、%.1f MB，%.2f 秒，%.1f MB/s",
+            report.exportedPhotos, report.copiedFiles, Double(report.bytesCopied) / 1_000_000, report.elapsed, report.megabytesPerSecond
+        ))
+        print("已有相同 \(report.identicalFiles)，改名 \(report.renamedFiles)，从其他位置 \(report.fromOtherLocation)，改用另一种格式 \(report.usedOtherKind)，"
+            + "改为历史 \(report.missingLocations)，移到无卷关联 \(report.hiddenPhotoIDs.count)，跳过离线照片 \(report.skippedOfflinePhotos)，"
+            + "离线文件 \(report.skippedOfflineFiles)，失败 \(report.failures.count)\(report.stoppedBy.map { "，停下：\($0)" } ?? "")")
+        for failure in report.failures.prefix(20) { print("  失败：\(failure.name)：\(failure.reason)") }
+    } catch {
+        print("导出失败：\(error)")
         exit(1)
     }
 case "dev-audit":
