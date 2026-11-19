@@ -11,9 +11,18 @@ struct PhotoGrid: NSViewRepresentable {
     var sections: [DaySection]
     var sectionsVersion: Int
     var thumbnailSize: Double
-    var store: PreviewStore?
-    var isOffline: (PhotoID) -> Bool
-    var onSelectionChange: (Set<PhotoID>) -> Void
+    var loader: ThumbnailLoader
+    /// 模型改了选择（键盘、全选、重新筛选）时变化；网格据此同步选中状态并滚到焦点。
+    var selectionVersion: Int
+    var selectedIDs: Set<PhotoID>
+    var focusedID: PhotoID?
+    /// 星级、标签、标记改了时变化；只重画 `changedIDs` 里的格子。
+    var marksVersion: Int
+    var changedIDs: Set<PhotoID>
+    var marks: CellMarks
+    var onSelectionChange: (Set<PhotoID>, PhotoID?) -> Void
+    var onOpen: (PhotoID) -> Void
+    var onColumnsChange: (Int) -> Void
     /// 第一屏的缩略图全部画出来时调用一次（PF-1 计时到这里）。
     var onFirstScreenShown: (() -> Void)?
 
@@ -21,6 +30,9 @@ struct PhotoGrid: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let layout = DayGridLayout()
+        layout.onColumnsChange = { [weak coordinator = context.coordinator] columns in
+            coordinator?.parent?.onColumnsChange(columns)
+        }
         let collectionView = NSCollectionView()
         collectionView.collectionViewLayout = layout
         collectionView.isSelectable = true
@@ -59,18 +71,30 @@ struct PhotoGrid: NSViewRepresentable {
             layout.itemSide = thumbnailSize
             layout.invalidateLayout()
         }
-        if coordinator.loader.store?.root != store?.root { coordinator.loader.store = store }
         if coordinator.version != sectionsVersion {
             coordinator.version = sectionsVersion
             coordinator.sections = sections
             layout.sectionCounts = sections.map(\.photos.count)
-            let selected = coordinator.selectedIDs
             collectionView.reloadData()
-            coordinator.restoreSelection(selected)
+            coordinator.restoreSelection(selectedIDs)
             if !coordinator.reportedFirstScreen, !sections.isEmpty {
                 collectionView.layoutSubtreeIfNeeded()
                 coordinator.trackFirstScreen()
             }
+        }
+        if coordinator.selectionVersion != selectionVersion {
+            coordinator.selectionVersion = selectionVersion
+            coordinator.restoreSelection(selectedIDs)
+            coordinator.reveal(focusedID)
+        }
+        if coordinator.focusedID != focusedID {
+            let old = coordinator.focusedID
+            coordinator.focusedID = focusedID
+            coordinator.refresh([old, focusedID].compactMap { $0 })
+        }
+        if coordinator.marksVersion != marksVersion {
+            coordinator.marksVersion = marksVersion
+            coordinator.refresh(changedIDs)
         }
     }
 
@@ -81,7 +105,10 @@ struct PhotoGrid: NSViewRepresentable {
         var frameObserver: NSObjectProtocol?
         var sections: [DaySection] = []
         var version = -1
-        let loader = ThumbnailLoader()
+        var selectionVersion = -1
+        var marksVersion = -1
+        var focusedID: PhotoID?
+        var loader: ThumbnailLoader? { parent?.loader }
         var reportedFirstScreen = false
         private var firstScreenWaiting: Set<PhotoID>?
 
@@ -134,15 +161,47 @@ struct PhotoGrid: NSViewRepresentable {
             return sections[indexPath.section].photos[indexPath.item]
         }
 
+        func indexPath(of id: PhotoID) -> IndexPath? {
+            parent?.marks.position(id)
+        }
+
         func restoreSelection(_ ids: Set<PhotoID>) {
-            guard !ids.isEmpty, let collectionView else { return }
-            var paths: Set<IndexPath> = []
-            for (sectionIndex, section) in sections.enumerated() {
-                for (itemIndex, photo) in section.photos.enumerated() where ids.contains(photo.id) {
-                    paths.insert(IndexPath(item: itemIndex, section: sectionIndex))
-                }
+            guard let collectionView else { return }
+            let paths = Set(ids.compactMap(indexPath(of:)))
+            if collectionView.selectionIndexPaths != paths { collectionView.selectionIndexPaths = paths }
+        }
+
+        /// 把焦点格滚进可见区域（上下各留一点空）。
+        func reveal(_ id: PhotoID?) {
+            guard let id, let collectionView, let path = indexPath(of: id),
+                  let frame = collectionView.collectionViewLayout?.layoutAttributesForItem(at: path)?.frame else { return }
+            collectionView.scrollToVisible(frame.insetBy(dx: 0, dy: -40))
+        }
+
+        /// 重画这些照片的格子（角标、焦点框、是否已不符合条件）。不在可见区域的格子出现时自然会按新数据画。
+        func refresh(_ ids: some Collection<PhotoID>) {
+            guard let collectionView, !ids.isEmpty else { return }
+            let wanted = Set(ids)
+            for path in collectionView.indexPathsForVisibleItems() {
+                guard let photo = photo(at: path), wanted.contains(photo.id),
+                      let item = collectionView.item(at: path) as? ThumbnailItem else { continue }
+                item.updateMarks(current(photo), marks: marks(for: photo.id))
             }
-            collectionView.selectionIndexPaths = paths
+        }
+
+        func current(_ photo: PhotoSummary) -> PhotoSummary {
+            parent?.marks.current(photo.id) ?? photo
+        }
+
+        func marks(for id: PhotoID) -> ThumbnailItem.Marks {
+            guard let parent else { return ThumbnailItem.Marks() }
+            let photo = parent.marks.current(id)
+            return ThumbnailItem.Marks(
+                offline: parent.marks.isOffline(id),
+                stale: photo.map { !parent.marks.matches($0) } ?? false,
+                focused: id == parent.focusedID,
+                labelColors: parent.marks.labelColors
+            )
         }
 
         /// PF-2 的替代测量：每 1/60 秒向下滚 `scrollStep` 点，量主线程上每一帧的滚动、排版和绘制用时。
@@ -188,8 +247,9 @@ struct PhotoGrid: NSViewRepresentable {
 
         func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
             let item = collectionView.makeItem(withIdentifier: ThumbnailItem.identifier, for: indexPath)
-            if let item = item as? ThumbnailItem, let photo = photo(at: indexPath) {
-                item.configure(photo, offline: parent?.isOffline(photo.id) ?? false, loader: loader) { [weak self] id in
+            if let item = item as? ThumbnailItem, let photo = photo(at: indexPath), let loader {
+                item.onOpen = { [weak self] id in self?.parent?.onOpen(id) }
+                item.configure(current(photo), marks: marks(for: photo.id), loader: loader) { [weak self] id in
                     self?.thumbnailShown(id)
                 }
             }
@@ -210,11 +270,12 @@ struct PhotoGrid: NSViewRepresentable {
         }
 
         func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
-            parent?.onSelectionChange(selectedIDs)
+            let clicked = indexPaths.count == 1 ? indexPaths.first.flatMap { photo(at: $0)?.id } : nil
+            parent?.onSelectionChange(selectedIDs, clicked)
         }
 
         func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) {
-            parent?.onSelectionChange(selectedIDs)
+            parent?.onSelectionChange(selectedIDs, nil)
         }
     }
 }
@@ -225,6 +286,7 @@ struct PhotoGrid: NSViewRepresentable {
 final class DayGridLayout: NSCollectionViewLayout {
     var itemSide: Double = 160
     var sectionCounts: [Int] = [] { didSet { invalidateLayout() } }
+    var onColumnsChange: ((Int) -> Void)?
 
     let spacing: CGFloat = 6
     let inset: CGFloat = 14
@@ -249,7 +311,9 @@ final class DayGridLayout: NSCollectionViewLayout {
         super.prepare()
         width = visibleWidth
         let usable = max(1, width - inset * 2)
-        columns = max(1, Int((usable + spacing) / (CGFloat(itemSide) + spacing)))
+        let newColumns = max(1, Int((usable + spacing) / (CGFloat(itemSide) + spacing)))
+        if newColumns != columns { onColumnsChange?(newColumns) }
+        columns = newColumns
         cell = (usable - spacing * CGFloat(columns - 1)) / CGFloat(columns)
         sectionStarts.removeAll(keepingCapacity: true)
         var y: CGFloat = 4
@@ -345,16 +409,39 @@ final class DayGridLayout: NSCollectionViewLayout {
 
 // MARK: - 格子
 
+/// 格子上的角标与状态，来自模型（星级、标签、标记随改动变化，所以不放在分组的副本里）。
+struct CellMarks {
+    var current: (PhotoID) -> PhotoSummary?
+    /// 照片在网格里的位置（分组、组内序号）。
+    var position: (PhotoID) -> IndexPath?
+    var isOffline: (PhotoID) -> Bool
+    /// 照片是否符合当前筛选条件；结果保持不变时，已不符合的格子变淡。
+    var matches: (PhotoSummary) -> Bool
+    var labelColors: [LabelID: NSColor]
+}
+
 final class ThumbnailItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("ThumbnailItem")
+
+    struct Marks {
+        var offline = false
+        var stale = false
+        var focused = false
+        var labelColors: [LabelID: NSColor] = [:]
+    }
 
     private let thumbnail = NSImageView()
     private let badge = NSTextField(labelWithString: "")
     private let placeholder = NSTextField(labelWithString: "")
     private var photoID: PhotoID?
+    private var focused = false
+    var onOpen: ((PhotoID) -> Void)?
 
     override func loadView() {
-        let root = NSView()
+        let root = CellView()
+        root.onDoubleClick = { [weak self] in
+            if let self, let id = self.photoID { self.onOpen?(id) }
+        }
         root.wantsLayer = true
         root.layer?.cornerRadius = 4
         thumbnail.imageScaling = .scaleProportionallyDown
@@ -381,7 +468,8 @@ final class ThumbnailItem: NSCollectionViewItem {
             placeholder.centerYAnchor.constraint(equalTo: root.centerYAnchor),
             placeholder.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -8),
             badge.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 6),
-            badge.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -6)
+            badge.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -6),
+            badge.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -6)
         ])
         view = root
     }
@@ -392,19 +480,13 @@ final class ThumbnailItem: NSCollectionViewItem {
 
     private func updateSelection() {
         view.layer?.backgroundColor = isSelected ? NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor : NSColor.quaternaryLabelColor.cgColor
+        view.layer?.borderWidth = focused && isSelected ? 2 : 0
+        view.layer?.borderColor = NSColor.controlAccentColor.cgColor
     }
 
-    func configure(_ photo: PhotoSummary, offline: Bool, loader: ThumbnailLoader, shown: @escaping (PhotoID) -> Void) {
+    func configure(_ photo: PhotoSummary, marks: Marks, loader: ThumbnailLoader, shown: @escaping (PhotoID) -> Void) {
         photoID = photo.id
-        updateSelection()
-        var marks: [String] = []
-        if photo.rating > 0 { marks.append(String(repeating: "★", count: photo.rating)) }
-        if photo.flag == .pick { marks.append("Pick") }
-        if photo.flag == .reject { marks.append("✕") }
-        if photo.hasRaw && photo.hasJPEG { marks.append("RAW+JPG") } else if photo.hasRaw { marks.append("RAW") }
-        if offline { marks.append("离线") }
-        badge.stringValue = marks.isEmpty ? "" : " " + marks.joined(separator: " · ") + " "
-        badge.isHidden = marks.isEmpty
+        updateMarks(photo, marks: marks)
         view.toolTip = photo.baseName
 
         thumbnail.image = nil
@@ -425,9 +507,55 @@ final class ThumbnailItem: NSCollectionViewItem {
         }
     }
 
+    /// 角标：星级、Pick / Reject、标签色点、RAW+JPG、离线（信息架构 §3.3）。
+    func updateMarks(_ photo: PhotoSummary, marks: Marks) {
+        focused = marks.focused
+        updateSelection()
+        view.alphaValue = marks.stale ? 0.4 : 1
+        let text = NSMutableAttributedString()
+        let font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        func append(_ string: String, _ color: NSColor = .white) {
+            if text.length > 0 { text.append(NSAttributedString(string: " · ", attributes: [.font: font, .foregroundColor: NSColor.white])) }
+            text.append(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
+        }
+        if photo.rating > 0 { append(String(repeating: "★", count: photo.rating), .systemYellow) }
+        if photo.flag == .pick { append("Pick", .systemGreen) }
+        if photo.flag == .reject { append("Reject", .systemRed) }
+        let dots = photo.labelIDs.compactMap { marks.labelColors[$0] }
+        if !dots.isEmpty {
+            if text.length > 0 { text.append(NSAttributedString(string: " · ", attributes: [.font: font, .foregroundColor: NSColor.white])) }
+            for (index, color) in dots.enumerated() {
+                text.append(NSAttributedString(string: index == 0 ? "●" : " ●", attributes: [.font: font, .foregroundColor: color]))
+            }
+        }
+        if photo.hasRaw && photo.hasJPEG { append("RAW+JPG") } else if photo.hasRaw { append("RAW") }
+        if marks.offline { append("离线") }
+        if text.length > 0 {
+            let padded = NSMutableAttributedString(string: " ", attributes: [.font: font])
+            padded.append(text)
+            padded.append(NSAttributedString(string: " ", attributes: [.font: font]))
+            badge.attributedStringValue = padded
+        }
+        badge.isHidden = text.length == 0
+    }
+
     private func show(_ image: NSImage) {
         thumbnail.image = image
         placeholder.isHidden = true
+    }
+}
+
+/// 格子的底层视图：点击都交给网格处理选择，双击另外通知。
+final class CellView: NSView {
+    var onDoubleClick: (() -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        frame.contains(point) ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        if event.clickCount == 2 { onDoubleClick?() }
     }
 }
 
@@ -467,47 +595,5 @@ final class DayHeaderView: NSView, NSCollectionViewElement {
             return day == nil ? "\(count.formatted()) 张" : "\(day!) · \(count.formatted()) 张"
         }
         return "\(display.string(from: date)) · \(count.formatted()) 张"
-    }
-}
-
-// MARK: - 缩略图加载
-
-/// 从本机预览目录读 480 缩略图，后台解码，主线程只拿解码好的图。
-@MainActor
-final class ThumbnailLoader {
-    var store: PreviewStore?
-    private let cache = NSCache<NSNumber, NSImage>()
-    private var waiting: [PhotoID: [(NSImage?) -> Void]] = [:]
-    private let queue = DispatchQueue(label: "thumbnails", qos: .userInitiated, attributes: .concurrent)
-
-    init() { cache.countLimit = 3_000 }
-
-    func cached(_ id: PhotoID) -> NSImage? { cache.object(forKey: NSNumber(value: id)) }
-
-    func load(_ id: PhotoID, completion: @escaping (NSImage?) -> Void) {
-        guard let store else { return completion(nil) }
-        if waiting[id] != nil {
-            waiting[id]?.append(completion)
-            return
-        }
-        waiting[id] = [completion]
-        let url = store.url(for: id, size: .thumb)
-        queue.async {
-            let decoded = Self.decode(url)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    let image = decoded.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
-                    if let image { self.cache.setObject(image, forKey: NSNumber(value: id)) }
-                    let callbacks = self.waiting.removeValue(forKey: id) ?? []
-                    for callback in callbacks { callback(image) }
-                }
-            }
-        }
-    }
-
-    nonisolated private static func decode(_ url: URL) -> CGImage? {
-        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, options)
     }
 }

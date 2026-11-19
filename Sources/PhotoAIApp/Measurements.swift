@@ -1,5 +1,6 @@
 import AppKit
 import PhotoAICore
+import Synchronization
 
 /// 性能目标 PF-1、PF-3、PF-4、PF-5 的实测记录。设置环境变量 `PHOTOAI_MEASURE=1` 时打印到标准输出，
 /// 每行以 `PF` 开头，验收记录直接引用这些行。
@@ -8,7 +9,38 @@ enum Measurements {
 
     static func record(_ label: String, since start: Date, count: Int) {
         guard isEnabled else { return }
-        emit("\(label)：\(milliseconds(since: start)) ms，\(count) 张")
+        let elapsed = Date().timeIntervalSince(start) * 1000
+        let collected = samples.withLock { samples -> Bool in
+            guard var all = samples else { return false }
+            all[String(label.prefix { $0 != " " }), default: []].append(elapsed)
+            samples = all
+            return true
+        }
+        // 连续测量时只记数，最后汇总打印。
+        if !collected { emit("\(label)：\(Int(elapsed)) ms，\(count) 张") }
+    }
+
+    /// 按 `PF-6` 这样的前缀收集每次的用时，给连续打星这类上千次的测量汇总用。
+    private static let samples = Mutex<[String: [Double]]?>(nil)
+
+    static func startCollecting() { samples.withLock { $0 = [:] } }
+
+    static func percentile(prefix: String, _ fraction: Double) -> Double? {
+        samples.withLock { samples in
+            guard let values = samples?[prefix]?.sorted(), !values.isEmpty else { return nil }
+            return values[min(values.count - 1, Int(Double(values.count) * fraction))]
+        }
+    }
+
+    static func report(prefix: String, label: String, target: Double) {
+        let values = samples.withLock { $0?[prefix]?.sorted() ?? [] }
+        guard !values.isEmpty else { return emit("\(label)：没有数据") }
+        let over = values.filter { $0 > target }.count
+        emit(String(
+            format: "%@：%d 次，中位 %.1f ms，95%% %.1f ms，最大 %.1f ms，超过 %.0f ms 的 %d 次",
+            label, values.count, values[values.count / 2], values[min(values.count - 1, values.count * 95 / 100)],
+            values.last!, target, over
+        ))
     }
 
     /// PF-1：从进程启动到网格第一次有数据。

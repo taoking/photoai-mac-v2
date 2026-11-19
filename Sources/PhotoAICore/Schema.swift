@@ -113,6 +113,25 @@ enum Schema {
             added_at REAL NOT NULL,
             PRIMARY KEY (collection_id, photo_id)
         );
+        """,
+        // 2：M2 选片。标签固定 9 个位置，顺序决定快捷键；名字为空表示这个位置没用（信息架构 §3.3.2）。
+        """
+        CREATE TABLE labels (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT '',
+            color TEXT NOT NULL,
+            sort_order INTEGER NOT NULL UNIQUE
+        );
+        INSERT INTO labels (name, color, sort_order) VALUES
+            ('经典', '#e5484d', 0), ('人像', '#f5a524', 1), ('风景', '#30a46c', 2), ('人文', '#3e63dd', 3),
+            ('', '#8e4ec6', 4), ('', '#12a594', 5), ('', '#e93d82', 6), ('', '#ad7f58', 7), ('', '#8b8d98', 8);
+        CREATE TABLE photo_labels (
+            photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+            label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+            PRIMARY KEY (photo_id, label_id)
+        ) WITHOUT ROWID;
+        CREATE INDEX photo_labels_label ON photo_labels(label_id);
+        CREATE INDEX collection_members_photo ON collection_members(photo_id);
         """
     ]
 
