@@ -12,7 +12,7 @@ enum PhotoCommand: Hashable {
     case flag(Flag)
     /// 两张比较时：焦点格 Pick、另一张 Reject。
     case pickFocusRejectOther
-    case toggleSingle, compare, focusMode, escape, toggleFilterBar, infoOverlay, zoom
+    case toggleSingle, compare, focusMode, escape, toggleFilterBar, infoOverlay, zoom, zoomIn, zoomOut, zoomToFit
     case showGrid, showSingle, showCompare
     case addToLastCollection, addToCollection, removeFromCollection
     case selectAll, undo, redo
@@ -49,6 +49,9 @@ enum PhotoCommand: Hashable {
         case .toggleFilterBar: Shortcut(key: "\\", display: "\\")
         case .infoOverlay: Shortcut(key: "i", display: "I")
         case .zoom: Shortcut(key: "z", display: "Z")
+        case .zoomIn: Shortcut(key: "=", modifiers: .command, display: "⌘+")
+        case .zoomOut: Shortcut(key: "-", modifiers: .command, display: "⌘−")
+        case .zoomToFit: Shortcut(key: "0", modifiers: .command, display: "⌘0")
         case .showGrid: Shortcut(key: "1", modifiers: .command, display: "⌘1")
         case .showSingle: Shortcut(key: "2", modifiers: .command, display: "⌘2")
         case .showCompare: Shortcut(key: "3", modifiers: .command, display: "⌘3")
@@ -84,6 +87,9 @@ enum PhotoCommand: Hashable {
         case .toggleFilterBar: "显示 / 隐藏筛选条"
         case .infoOverlay: "单张视图的参数浮层"
         case .zoom: "放大到 100% / 适合窗口"
+        case .zoomIn: "放大一档（50% / 100% / 200%）"
+        case .zoomOut: "缩小一档"
+        case .zoomToFit: "适合窗口"
         case .showGrid: "网格"
         case .showSingle: "单张"
         case .showCompare: "比较"
@@ -101,7 +107,7 @@ enum PhotoCommand: Hashable {
     /// 速查表的分组和顺序。
     static let reference: [(String, [PhotoCommand])] = [
         ("浏览", [.previous, .next, .rowUp, .rowDown, .toggleSingle, .compare, .focusMode, .escape, .toggleFilterBar, .infoOverlay,
-                .zoom, .showGrid, .showSingle, .showCompare]),
+                .zoom, .zoomIn, .zoomOut, .zoomToFit, .showGrid, .showSingle, .showCompare]),
         ("打星与标记", [.rate(1), .rate(2), .rate(3), .rate(4), .rate(5), .rate(0),
                      .flag(.pick), .flag(.reject), .flag(.none), .pickFocusRejectOther]),
         ("标签", (0..<4).map { .toggleLabel(slot: $0, viaOption: false) } + (0..<9).map { .toggleLabel(slot: $0, viaOption: true) }
@@ -114,9 +120,9 @@ enum PhotoCommand: Hashable {
 
     /// 按键事件对应的命令。Caps Lock（自动前进）开着时字母是大写的，所以字母一律按小写比较，⇧ 另外看。
     static func matching(_ event: NSEvent) -> PhotoCommand? {
-        let flags = event.modifierFlags.intersection([.command, .option, .shift, .control])
+        var flags = event.modifierFlags.intersection([.command, .option, .shift, .control])
         guard !flags.contains(.control) else { return nil }
-        let key: KeyEquivalent
+        var key: KeyEquivalent
         switch event.keyCode {
         case 123: key = .leftArrow
         case 124: key = .rightArrow
@@ -128,6 +134,11 @@ enum PhotoCommand: Hashable {
         default:
             guard let characters = event.charactersIgnoringModifiers?.lowercased(), characters.count == 1 else { return nil }
             key = KeyEquivalent(Character(characters))
+        }
+        // ⌘+ 在美式键盘上是 ⌘⇧=，也常直接按 ⌘=：都算放大。
+        if key.character == "+" {
+            key = "="
+            flags.remove(.shift)
         }
         let isLetter = key.character.isLetter
         return all.first { command in
@@ -248,12 +259,28 @@ struct PhotoCommands: Commands {
             item(.focusMode)
             item(.infoOverlay)
             item(.zoom, title: model.zoomed ? "适合窗口" : "放大到 100%")
+            item(.zoomIn)
+            item(.zoomOut)
+            item(.zoomToFit)
+            Divider()
+            Picker("背景", selection: style(\.background)) {
+                ForEach(ViewerStyle.Background.allCases) { Text($0.title).tag($0) }
+            }
+            Toggle("照片细边框和投影", isOn: style(\.framed))
+            Picker("四周留白", selection: style(\.margin)) {
+                ForEach(ViewerStyle.Margin.allCases) { Text($0.title).tag($0) }
+            }
+            Divider()
             Button(model.showInspector ? "隐藏检查器" : "显示检查器") { model.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
         }
         CommandGroup(replacing: .help) {
             item(.showShortcuts)
         }
+    }
+
+    private func style<Value>(_ path: WritableKeyPath<ViewerStyle, Value>) -> Binding<Value> {
+        Binding(get: { model.viewerStyle[keyPath: path] }, set: { model.viewerStyle[keyPath: path] = $0 })
     }
 
     private func item(_ command: PhotoCommand, title: String? = nil) -> some View {

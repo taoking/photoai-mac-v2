@@ -118,7 +118,8 @@ public struct PreviewGenerator: Sendable {
                 photoID: job.photoID,
                 thumb: job.needsThumb,
                 preview: job.needsPreview,
-                sourceFileID: source.fileID
+                sourceFileID: source.fileID,
+                pixelSize: OriginalDecoder.pixelSize(at: url)
             )
             return .ready
         }

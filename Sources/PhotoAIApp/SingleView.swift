@@ -4,26 +4,52 @@ import SwiftUI
 
 /// 单张视图：本机的 1600 预览（卷离线也能看）、浮在底部的信息条、胶片条（信息架构 §3.4）。
 /// 信息条在鼠标不动 2 秒后淡出，打星、打标签时短暂出现。
+/// 在一张照片上停 0.3 秒、原片所在卷在线时，换上按屏幕尺寸读的原图（计划 V-3）。
 struct SingleView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.displayScale) private var displayScale
     @State private var barShownAt = Date()
     @State private var barVisible = true
+    /// 适合窗口时触控板捏合：手指还在时先把画面放大，松手后进入放大。
+    @State private var pinch: CGFloat = 1
+    @State private var pinchAnchor = UnitPoint.center
 
     var body: some View {
+        let style = model.viewerStyle
         VStack(spacing: 0) {
             ZStack(alignment: .bottom) {
-                Color(nsColor: .underPageBackgroundColor)
+                style.background.color
                 if let id = model.focusedPhotoID {
                     if model.zoomed {
                         ZoomedPhoto(id: id) { model.toggleZoom() }
                     } else {
                         GeometryReader { geometry in
-                            PreviewImage(id: id, reportsPageTurn: true)
-                                .padding(16)
+                            PreviewImage(id: id, reportsPageTurn: true, sharpens: true)
+                                .padding(style.margin.points)
+                                .scaleEffect(pinch, anchor: pinchAnchor)
                                 .contentShape(Rectangle())
                                 .gesture(SpatialTapGesture().onEnded { value in
                                     model.toggleZoom(at: zoomPoint(value.location, in: geometry.size, id: id))
                                 })
+                                .simultaneousGesture(MagnifyGesture()
+                                    .onChanged { value in
+                                        pinchAnchor = value.startAnchor
+                                        pinch = max(1, value.magnification)
+                                    }
+                                    .onEnded { value in
+                                        pinch = 1
+                                        guard value.magnification > 1.05 else { return }
+                                        model.zoom(
+                                            to: model.fitScale * value.magnification,
+                                            at: zoomPoint(value.startLocation, in: geometry.size, id: id)
+                                        )
+                                    })
+                                .task(id: SharpRequest(id: id, size: geometry.size, margin: style.margin.points)) {
+                                    let longEdge = reportFitScale(in: geometry.size, id: id)
+                                    try? await Task.sleep(for: .milliseconds(300))
+                                    guard !Task.isCancelled else { return }
+                                    model.loadSharpOriginals(around: id, maximumPixelSize: longEdge)
+                                }
                         }
                     }
                     if model.showInfoOverlay {
@@ -37,6 +63,7 @@ struct SingleView: View {
                         .animation(.easeInOut(duration: 0.25), value: barVisible)
                 }
             }
+            .environment(\.colorScheme, style.background.colorScheme)
             .contentShape(Rectangle())
             .onContinuousHover { _ in pokeBar() }
             Divider()
@@ -46,15 +73,36 @@ struct SingleView: View {
         .onAppear { pokeBar() }
     }
 
-    /// 单击的位置换算成照片上的位置（0–1）：照片按原比例放在内边距 16 的区域正中。
-    private func zoomPoint(_ location: CGPoint, in size: CGSize, id: PhotoID) -> CGPoint {
-        let area = CGRect(origin: .zero, size: size).insetBy(dx: 16, dy: 16)
-        // 按画出来的那张图的比例算：机内 16:9 裁切的照片，记录的尺寸是 RAW 的 3:2，预览是 16:9。
+    private struct SharpRequest: Equatable {
+        let id: PhotoID
+        let size: CGSize
+        let margin: CGFloat
+    }
+
+    /// 照片按原比例放在留白之内的区域正中，这是它画出来的位置。
+    private func photoRect(in size: CGSize, id: PhotoID) -> CGRect {
+        let margin = model.viewerStyle.margin.points
+        let area = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
+        // 按画出来的那张图的比例算（M3 之前的库里，机内 16:9 裁切的照片记的是 RAW 的 3:2）。
         let shown = model.previews.cached(id) ?? model.thumbnails.cached(id)
         let ratio = shown.map { $0.size.width / max($0.size.height, 1) } ?? CGFloat(model.photo(id)?.aspectRatio ?? 1.5)
-        let width = min(area.width, area.height * ratio)
+        let width = max(0, min(area.width, area.height * ratio))
         let height = width / ratio
-        let rect = CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
+        return CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
+    }
+
+    /// 把适合窗口的比例报给模型（⌘+ / 捏合从这里起算），返回照片在屏幕上的长边像素数（换原图解多大）。
+    private func reportFitScale(in size: CGSize, id: PhotoID) -> Int {
+        let rect = photoRect(in: size, id: id)
+        if let photo = model.photo(id), let width = photo.width, let height = photo.height, width > 0, height > 0 {
+            model.fitScale = max(rect.width, rect.height) * displayScale / CGFloat(max(width, height))
+        }
+        return Int((max(rect.width, rect.height) * displayScale).rounded())
+    }
+
+    /// 单击的位置换算成照片上的位置（0–1）。
+    private func zoomPoint(_ location: CGPoint, in size: CGSize, id: PhotoID) -> CGPoint {
+        let rect = photoRect(in: size, id: id)
         guard rect.width > 0, rect.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
         return CGPoint(x: min(max((location.x - rect.minX) / rect.width, 0), 1), y: min(max((location.y - rect.minY) / rect.height, 0), 1))
     }
@@ -92,6 +140,10 @@ struct InfoBar: View {
                 }
                 if model.isOffline(id) {
                     Text("离线").font(.caption).foregroundStyle(.secondary)
+                } else if !model.zoomed {
+                    // 正在看的是换上的原图还是本机预览（计划 V-3）。
+                    Text(model.sharpOriginals[id] != nil ? "原图" : "预览").font(.caption).foregroundStyle(.secondary)
+                        .help("在一张照片上停一下，原片所在卷在线时换上原图；卷离线时一直是本机预览")
                 }
                 Text("\(((model.resultIndex[id] ?? 0) + 1).formatted()) / \(model.photoCount.formatted())")
                     .font(.callout).foregroundStyle(.secondary).monospacedDigit()
@@ -133,21 +185,25 @@ struct InfoOverlay: View {
 }
 
 /// 一张照片的 1600 预览。先显示已经在内存里的 480 缩略图，1600 解码好后换上。
+/// `sharpens`（单张视图）：模型里有换上的原图就显示原图。
 struct PreviewImage: View {
     @Environment(AppModel.self) private var model
     let id: PhotoID
     /// 单张视图里翻页：大图画出来时记 PF-7。
     var reportsPageTurn = false
+    var sharpens = false
     @State private var loaded: (id: PhotoID, image: NSImage)?
 
     var body: some View {
-        let image = loaded?.id == id ? loaded?.image : (model.previews.cached(id) ?? model.thumbnails.cached(id))
+        let preview = loaded?.id == id ? loaded?.image : (model.previews.cached(id) ?? model.thumbnails.cached(id))
+        let sharp = sharpens ? model.sharpOriginals[id]?.nsImage : nil
         Group {
-            if let image {
+            if let image = sharp ?? preview {
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
+                    .viewerFrame(model.viewerStyle)
             } else if model.photo(id)?.thumbState == .ready {
                 ProgressView().controlSize(.small)
             } else {
@@ -283,7 +339,8 @@ struct CompareView: View {
                 .padding(8)
             }
         }
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(model.viewerStyle.background.color)
+        .environment(\.colorScheme, model.viewerStyle.background.colorScheme)
     }
 }
 

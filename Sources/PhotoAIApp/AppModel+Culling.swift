@@ -140,6 +140,9 @@ extension AppModel {
         case .toggleFilterBar: filterBarVisible.toggle()
         case .infoOverlay: if viewMode == .single { showInfoOverlay.toggle() }
         case .zoom: toggleZoom()
+        case .zoomIn: zoomIn()
+        case .zoomOut: zoomOut()
+        case .zoomToFit: if zoomed { endZoom() }
         case .export: beginExport()
         case .addToLastCollection:
             if let id = lastCollectionID, collections.contains(where: { $0.id == id }) {
@@ -192,6 +195,7 @@ extension AppModel {
             guard focusedPhotoID != nil else { return }
         case .grid:
             focusMode = false
+            dropSharpOriginals()
             selectionVersion += 1  // 回到网格时滚到焦点
         }
         viewMode = mode

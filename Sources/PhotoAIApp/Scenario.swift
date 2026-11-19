@@ -7,7 +7,10 @@ import PhotoAICore
 ///   在收藏夹里移出、撤销、补加 → 比较 → 标签设置。最后把应有的星级、标签、收藏夹写到 `PHOTOAI_SCENARIO_STATE`。
 /// - `PHOTOAI_SCENARIO=verify`：重新打开软件后，核对库里的值和上一次运行写下的一致，撤销记录是空的。
 /// - `PHOTOAI_SCENARIO=cull1000`：单张视图里连续打 1,000 次星（自动前进），记录 PF-6、PF-7 的分布。
+///   `PHOTOAI_CULL_COUNT`、`PHOTOAI_CULL_INTERVAL_MS` 改次数和间隔（默认 1,000 次、40 ms）：间隔超过 300 ms 时
+///   每张都会在后台换原图（计划 V-3），测它对打星、翻页有没有影响。
 /// - `PHOTOAI_SCENARIO=export`：M3 的导出与 100% 放大，见 `Scenario+Export.swift`。
+/// - `PHOTOAI_SCENARIO=viewing`：观看体验（背景、任意缩放、单张换原图、照片尺寸），见 `Scenario+Viewing.swift`。
 ///
 /// 只用于临时的库（`PHOTOAI_LIBRARY_DIR`），会改动库里的星级、标签和收藏夹。
 /// 每一步都走 `perform(_:)`，和按键走的是同一条路。
@@ -37,6 +40,7 @@ final class ScenarioRunner {
         case "cull1000": buildCull1000()
         case "filter": buildFilter()
         case "export": buildExport()
+        case "viewing": buildViewing()
         default:
             print("FAIL 未知的场景 \(mode)")
             exit(2)
@@ -81,7 +85,7 @@ final class ScenarioRunner {
     private func photo(_ index: Int) -> PhotoSummary { model.photo(model.resultIDs[index])! }
 
     /// 发一个真实的按键事件，经过和用户按键一样的路径（本地事件监视 → 命令表 → 菜单 / 文本框）。
-    private func press(_ characters: String, keyCode: UInt16, flags: NSEvent.ModifierFlags = [], window: NSWindow? = nil) {
+    func press(_ characters: String, keyCode: UInt16, flags: NSEvent.ModifierFlags = [], window: NSWindow? = nil) {
         let target = window ?? NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }
         let shown = flags.contains(.capsLock) ? characters.uppercased() : characters
         for (type, eventFlags) in [(NSEvent.EventType.flagsChanged, flags), (.keyDown, flags), (.keyUp, flags)] {
@@ -422,33 +426,38 @@ final class ScenarioRunner {
 
     // MARK: - 连续打星
 
+    private var cullCount: Int { ProcessInfo.processInfo.environment["PHOTOAI_CULL_COUNT"].flatMap(Int.init) ?? 1_000 }
+    private var cullInterval: Double { (ProcessInfo.processInfo.environment["PHOTOAI_CULL_INTERVAL_MS"].flatMap(Double.init) ?? 40) / 1000 }
+
     private func buildCull1000() {
         step("准备") { [self] in
             model.selection = .all
             model.sort = .captureDateDescending
         }
-        asyncStep("单张视图连续打 1,000 次星") { [self] done in
-            guard model.photoCount >= 1_001 else {
-                check(false, "至少 1,001 张照片")
+        asyncStep("单张视图连续打 \(cullCount) 次星") { [self] done in
+            guard model.photoCount > cullCount else {
+                check(false, "至少 \(cullCount + 1) 张照片")
                 return done()
             }
             model.perform(.toggleSingle)
             model.setAutoAdvance(true)
             Measurements.startCollecting()
             let start = model.resultIDs.firstIndex(of: model.focusedPhotoID ?? -1) ?? 0
-            rateNext(remaining: 1_000, startIndex: start, done: done)
+            rateNext(remaining: cullCount, startIndex: start, done: done)
         }
     }
 
-    /// 每 40 ms 按一次（每秒 25 张，比人快得多），每次都等这一轮界面更新完再按下一次。
+    /// 默认每 40 ms 按一次（每秒 25 张，比人快得多），每次都等这一轮界面更新完再按下一次。
     private func rateNext(remaining: Int, startIndex: Int, done: @escaping () -> Void) {
         guard remaining > 0 else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
-                let ratings = model.resultIDs[startIndex..<(startIndex + 1_000)].compactMap { model.photo($0)?.rating }
-                check(ratings.count == 1_000 && ratings.allSatisfy { $0 > 0 }, "1,000 张都打上了星")
-                check(model.focusedPhotoID == model.resultIDs[startIndex + 1_000], "自动前进了 1,000 次")
-                Measurements.report(prefix: "PF-6", label: "PF-6 打星（1,000 次）", target: 50)
-                Measurements.report(prefix: "PF-7", label: "PF-7 翻页（1,000 次，自动前进）", target: 100)
+                let count = cullCount
+                let ratings = model.resultIDs[startIndex..<(startIndex + count)].compactMap { model.photo($0)?.rating }
+                check(ratings.count == count && ratings.allSatisfy { $0 > 0 }, "\(count) 张都打上了星")
+                check(model.focusedPhotoID == model.resultIDs[startIndex + count], "自动前进了 \(count) 次")
+                Measurements.report(prefix: "PF-6", label: "PF-6 打星（\(count) 次）", target: 50)
+                Measurements.report(prefix: "PF-7", label: "PF-7 翻页（\(count) 次，自动前进）", target: 100)
+                Measurements.report(prefix: "V-3", label: "V-3 换原图（停留之后）", target: 1_000)
                 check((Measurements.percentile(prefix: "PF-6", 0.95) ?? 999) <= 50, "PF-6 95% ≤ 50 ms")
                 check((Measurements.percentile(prefix: "PF-7", 0.95) ?? 999) <= 100, "PF-7 95% ≤ 100 ms")
                 model.setAutoAdvance(false)
@@ -457,7 +466,7 @@ final class ScenarioRunner {
             return
         }
         model.perform(.rate(remaining % 5 + 1))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + cullInterval) { [weak self] in
             self?.rateNext(remaining: remaining - 1, startIndex: startIndex, done: done)
         }
     }

@@ -100,7 +100,15 @@ final class AppModel {
     var selectedPhotoIDs: Set<PhotoID> = []
     /// 焦点照片：单张视图显示的那张，键盘移动的起点。
     var focusedPhotoID: PhotoID? {
-        didSet { if zoomed, oldValue != focusedPhotoID { loadOriginalsForZoom() } }
+        didSet {
+            guard oldValue != focusedPhotoID else { return }
+            if zoomed { loadOriginalsForZoom() }
+            // 换上的原图只留新焦点附近的；快速翻页时中间的那些不留。
+            if !sharpOriginals.isEmpty, let id = focusedPhotoID {
+                let near = sharpNeighborhood(of: id)
+                sharpOriginals = sharpOriginals.filter { near.contains($0.key) }
+            }
+        }
     }
     /// 键盘、全选等由模型改了选择时加一，网格据此同步选中状态并滚到焦点。
     var selectionVersion = 0
@@ -117,6 +125,17 @@ final class AppModel {
     var compareFocus = 0
     /// `Z` 放大到 100%（单张、比较视图）。
     var zoomed = false
+    /// 放大的比例：1 是 100%（一个图像像素对一个屏幕像素）。⌘+ / ⌘− 按档位换，触控板捏合是任意比例（计划 V-2）。
+    var zoomScale: CGFloat = 1
+    /// 适合窗口时的比例，由视图报上来，⌘+ / ⌘− 据此决定下一档。
+    @ObservationIgnored var fitScale: CGFloat = 0.3
+    /// 背景、边框、留白（显示菜单，计划 V-1）。
+    var viewerStyle = ViewerStyle.load() {
+        didSet { if viewerStyle != oldValue { viewerStyle.save() } }
+    }
+    /// 单张视图适合窗口时换上的原图（计划 V-3）：按屏幕尺寸解码，只留焦点和前后各一张。
+    var sharpOriginals: [PhotoID: SharpOriginal] = [:]
+    @ObservationIgnored var sharpTask: Task<Void, Never>?
     /// 放大时画面中心落在照片上的哪里（0–1，左上为原点），比较视图各格共用，平移同步。
     var zoomCenter = CGPoint(x: 0.5, y: 0.5)
     /// 放大时各张照片的原文件读到哪一步。只留当前看的几张，解码后的原图很占内存。
@@ -232,12 +251,18 @@ final class AppModel {
         watcher = VolumeWatcher { [weak self] event in
             Task { @MainActor in self?.handle(event) }
         }
-        // 启动时核对预览文件，再为在线卷续做没完成的预览。
+        // 启动时核对预览文件（M3 之前的库再按缩略图校正一次照片尺寸），再为在线卷续做没完成的预览。
         let library = library!
         Task.detached(priority: .utility) {
-            _ = try? PreviewGenerator(library: library).verifyReadyFiles()
+            let generator = PreviewGenerator(library: library)
+            _ = try? generator.verifyReadyFiles()
+            let corrected = (try? library.correctDimensionsFromThumbnails(store: generator.store)) ?? 0
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                if corrected > 0 {
+                    Measurements.emit("按缩略图校正了 \(corrected) 张照片的尺寸")
+                    reloadPhotos(reason: .scan)
+                }
                 for (id, _) in onlineVolumes { enqueueScan(id) }
                 startPreviews()
             }

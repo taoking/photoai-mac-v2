@@ -213,6 +213,21 @@ public enum OriginalDecoder {
         return orientation >= 5 ? (height, width) : (width, height)
     }
 
+    /// 解码成长边不超过 `maximumPixelSize` 的图，按方向转正（单张视图换原图用，计划 V-3）。
+    /// 总是从完整图像缩：JPEG 内嵌的缩略图太小，RAW 的内嵌预览也只有 1616 px。
+    public static func decode(_ url: URL, maximumPixelSize: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
     public static func decode(_ url: URL) -> CGImage? {
         guard let size = pixelSize(at: url),
               let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {

@@ -139,9 +139,12 @@ body.focusmode #sidebar,body.focusmode #inspector,body.focusmode #toolbar,body.f
 .sbar .lc{display:inline-flex;align-items:center;gap:3px;font-size:12px}
 .sbar .lc i{width:8px;height:8px;border-radius:50%;display:inline-block}
 .sbar .fl{border-radius:8px;padding:0 6px;font-size:11px}
-.stage{flex:1;display:grid;place-items:center;position:relative;overflow:hidden;background:var(--bg)}
-.stage .img{border-radius:3px;box-shadow:0 4px 20px rgba(0,0,0,.25);transition:transform .15s;position:relative}
-.stage .img.zoom{transform:scale(2)}
+/* 观看背景（显示 → 背景）：不跟系统深浅色走；边框和投影可关；预览略软，停 0.3 秒换上原图 */
+.stage{flex:1;display:grid;place-items:center;position:relative;overflow:hidden;background:var(--viewer-bg,#292929)}
+.stage .img{transition:transform .15s,filter .2s;position:relative}
+.img.framed{outline:1px solid var(--viewer-line,rgba(255,255,255,.16));box-shadow:0 4px 24px rgba(0,0,0,.55)}
+.img.soft{filter:blur(.7px)}
+.sbar .src{font-size:11px}
 .zoomnote{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;z-index:3}
 .infoov{position:absolute;left:14px;bottom:14px;background:rgba(0,0,0,.65);color:#fff;border-radius:8px;padding:8px 12px;font-size:12px;z-index:3;line-height:1.6}
 .film{height:78px;flex:none;display:flex;gap:4px;overflow-x:auto;padding:6px 10px;border-top:1px solid var(--line)}
@@ -151,7 +154,7 @@ body.focusmode #sidebar,body.focusmode #inspector,body.focusmode #toolbar,body.f
 
 /* 比较 */
 #compare{display:flex;flex-direction:column;overflow:hidden}
-.cmp{flex:1;display:grid;gap:8px;padding:8px;background:var(--bg);min-height:0}
+.cmp{flex:1;display:grid;gap:8px;padding:8px;background:var(--viewer-bg,#292929);min-height:0}
 .cmp .cc{position:relative;display:grid;place-items:center;border:2px solid transparent;border-radius:6px;overflow:hidden;background:var(--panel)}
 .cmp .cc.on{border-color:var(--accent)}
 .cmp .cc .meta{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;border-radius:6px;padding:3px 8px;z-index:2}
@@ -405,7 +408,9 @@ const S = {
   sel: new Set(), focus: null, anchor: null,
   filters: {}, result: [], lastColl: null, undo: [], redo: [], autoAdvance: false,
   expandedYears: new Set([2026]), expandedMonths: new Set(['2026-08']),
-  zoom: false, info: false, cmpFocus: 0, search: null, tasks: null,
+  zoom: false, zoomScale: 1, info: false, cmpFocus: 0, search: null, tasks: null,
+  // 观看样式（计划 V-1）；sharp 是已换上原图的那张（V-3）
+  viewer: { bg: 'darkGray', framed: true, margin: 'narrow' }, sharp: null,
   filterbarOpen: true, focusMode: false,
 };
 const srcKey = s => s.type + ':' + (s.id ?? '');
@@ -762,7 +767,8 @@ function setView(v) {
     S.cmpFocus = 0;
   }
   if (v !== 'grid' && S.focus == null) return;
-  S.view = v; S.zoom = false;
+  S.view = v; S.zoom = false; S.zoomScale = 1;
+  if (v === 'grid') S.sharp = null;
   renderView();
   if (v === 'grid') { syncSelClasses(); scrollFocusIntoView(); }
 }
@@ -790,26 +796,68 @@ function renderSingle() {
   const online = isOnline(p);
   const needVol = presentLocs(p).map(l => volById(l.vol).name).join(' 或 ');
   $('#single').innerHTML = `
-    <div class="stage ${Date.now() < S.barUntil ? 'show' : ''}">
+    <div class="stage ${Date.now() < S.barUntil ? 'show' : ''}" style="${viewerVars()}">
       ${S.zoom ? `<div class="zoomnote">${zoomNote(p, online, needVol)}</div>` : ''}
-      <div class="img ${S.zoom ? 'zoom' : ''}" style="background:${phStyle(p)}"></div>
+      <div class="img ${S.viewer.framed ? 'framed' : ''} ${S.sharp === p.id || S.zoom ? '' : 'soft'}" style="background:${phStyle(p)};${S.zoom ? `transform:scale(${2 * S.zoomScale})` : ''}"></div>
       ${S.info ? `<div class="infoov">${timeStr(p.ts)}<br>${p.camera} · ${p.lens}<br>${p.focal} · ${p.aperture} · ${p.shutter}s · ISO ${p.iso}<br>📍 ${esc(p.place)}${p.people.length ? ' · 👤 ' + p.people.join('、') : ''}</div>` : ''}
       <div class="sbar"><button class="btn" data-act="back" title="回到网格（空格 / Esc）">▦</button><b>${p.name}</b>
         ${starsHTML(p, 'stars')}${lab}
         ${p.flag !== 'none' ? `<span class="fl" style="background:${p.flag === 'pick' ? 'var(--ok)' : 'var(--danger)'}">${p.flag === 'pick' ? 'Pick' : 'Reject'}</span>` : ''}
+        <span class="muted src">${!online ? '离线' : S.zoom ? '' : S.sharp === p.id ? '原图' : '预览'}</span>
         <span class="muted">${idx + 1} / ${S.result.length}</span>
         <button class="btn" data-act="info" title="参数浮层（I）">ⓘ</button>
         <button class="btn" data-act="focus" title="专注模式：隐藏侧栏、检查器、工具栏（F）">${S.focusMode ? '退出专注' : '专注'}</button></div>
     </div>
     <div class="film" id="film"></div>`;
-  layoutStage($('#single .stage'), $('#single .img'), p, 24);
+  layoutStage($('#single .stage'), $('#single .img'), p, VIEWER_MARGIN[S.viewer.margin] * 2);
   renderFilm();
+  scheduleSharp();
   if (Date.now() < S.barUntil) scheduleBarHide();
 }
 function zoomNote(p, online, needVol) {
-  if (!presentLocs(p).length) return '没有现存原片：只能放大 1600 预览';
-  if (!online) return `卷离线：只能放大 1600 预览；看原图请插入 ${esc(needVol)}`;
-  return '100%：正在读取原文件（原型）';
+  const pct = Math.round(S.zoomScale * 100) + '%';
+  if (!presentLocs(p).length) return pct + ' · 没有现存原片：只能放大 1600 预览';
+  if (!online) return `${pct} · 卷离线：只能放大 1600 预览；看原图请插入 ${esc(needVol)}`;
+  return pct + ' · 原文件（原型）';
+}
+// ---------- 观看：背景、边框、留白（V-1），任意比例（V-2），停一下换原图（V-3） ----------
+const VIEWER_BG = { darkGray: ['深灰', '#292929'], black: ['黑', '#000'], midGray: ['中灰', '#777'], white: ['白', '#f5f5f5'] };
+const VIEWER_MARGIN = { narrow: 16, wide: 48 };
+function viewerVars() {
+  const white = S.viewer.bg === 'white';
+  return `--viewer-bg:${VIEWER_BG[S.viewer.bg][1]};--viewer-line:${white ? 'rgba(0,0,0,.18)' : 'rgba(255,255,255,.16)'}`;
+}
+function setViewer(change) {
+  Object.assign(S.viewer, change);
+  renderMenubar(); renderView();
+}
+const ZOOM_STEPS = [0.5, 1, 2];
+const FIT_SCALE = 0.3;  // 原型里假定适合窗口约 30%
+function zoomIn() {
+  if (S.view === 'grid') return toast('放大用于单张和比较视图');
+  const cur = S.zoom ? S.zoomScale : FIT_SCALE; const next = ZOOM_STEPS.find(z => z > cur * 1.01);
+  if (next == null) return;
+  S.zoom = true; S.zoomScale = next; renderView();
+}
+function zoomOut() {
+  if (!S.zoom) return;
+  const next = [...ZOOM_STEPS].reverse().find(z => z < S.zoomScale * 0.99);
+  if (next != null && next > FIT_SCALE) S.zoomScale = next; else { S.zoom = false; S.zoomScale = 1; }
+  renderView();
+}
+// 在一张照片上停 0.3 秒、卷在线：换上原图（预览模糊一点，原图清楚）。卷离线、读不到都留在预览，不改历史。
+let sharpTimer = null;
+function scheduleSharp() {
+  clearTimeout(sharpTimer);
+  const id = S.focus;
+  if (S.sharp === id || S.zoom) return;
+  sharpTimer = setTimeout(() => {
+    const p = P[id];
+    if (S.view !== 'single' || S.focus !== id || !p || !isOnline(p) || presentLocs(p).every(l => isGone(p, l.vol))) return;
+    S.sharp = id;
+    document.querySelector('#single .img')?.classList.remove('soft');
+    const src = document.querySelector('#single .sbar .src'); if (src) src.textContent = '原图';
+  }, 300);
 }
 // 信息条：鼠标移动或刚打完星、标签时显示 2 秒，之后淡出，画面全部留给照片。
 S.barUntil = Date.now() + 2500;
@@ -862,10 +910,11 @@ function renderCompare() {
   if (ids.length < 2) { S.view = 'grid'; return renderView(); }
   if (S.cmpFocus >= ids.length) S.cmpFocus = 0;
   const cols = ids.length === 2 ? 2 : 2, rows = ids.length > 2 ? 2 : 1;
+  $('#compare').style.cssText = viewerVars();
   $('#compare').innerHTML = `<div class="s-head"><button class="btn ghost" data-act="back" style="padding:0 6px">▦</button><b>比较 ${ids.length} 张</b>
     <span class="muted">← → 切换焦点 · 打星、标签、标记作用于蓝框${ids.length === 2 ? ' · ⇧P 蓝框 Pick、另一张 Reject' : ''} · Z 同步放大 · F 专注</span></div>
     <div class="cmp" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},1fr)">
-    ${ids.map((id, i) => { const p = P[id]; return `<div class="cc ${i === S.cmpFocus ? 'on' : ''}" data-i="${i}"><div class="meta">${p.name} ${p.rating ? '★'.repeat(p.rating) : ''} ${p.flag !== 'none' ? (p.flag === 'pick' ? '· Pick' : '· Reject') : ''} ${[...p.labels].map(l => labelById(l).name).join(' ')}</div><div class="img ${S.zoom ? 'zoom' : ''}" style="background:${phStyle(p)};transition:transform .15s"></div></div>`; }).join('')}
+    ${ids.map((id, i) => { const p = P[id]; return `<div class="cc ${i === S.cmpFocus ? 'on' : ''}" data-i="${i}"><div class="meta">${p.name} ${p.rating ? '★'.repeat(p.rating) : ''} ${p.flag !== 'none' ? (p.flag === 'pick' ? '· Pick' : '· Reject') : ''} ${[...p.labels].map(l => labelById(l).name).join(' ')}</div><div class="img ${S.viewer.framed ? 'framed' : ''}" style="background:${phStyle(p)};transition:transform .15s;${S.zoom ? `transform:scale(${2 * S.zoomScale})` : ''}"></div></div>`; }).join('')}
     </div>`;
   document.querySelectorAll('#compare .cc').forEach((cc, i) => layoutStage(cc, cc.querySelector('.img'), P[ids[i]], 24));
 }
@@ -1077,7 +1126,7 @@ const KEYMAP = [
   ['1–5、0', '设置星级 / 清除星级'], ['6–9', '切换前四个标签（再按一次取消）'], ['⌥1–⌥9、⌥0', '切换第 1–9 个标签 / 清除所有标签'],
   ['P / X / U', 'Pick / Reject / 清除标记'], ['⇧P', '两张比较时：焦点格 Pick、另一张 Reject'],
   ['⇪ Caps Lock', '自动前进：打星、打标签、标记后自动跳到下一张'],
-  ['空格', '网格 ↔ 单张'], ['C', '比较所选 2–4 张'], ['Esc', '退出专注模式 / 回到网格'], ['Z', '放大到 100%'], ['I', '单张视图的参数浮层'],
+  ['空格', '网格 ↔ 单张'], ['C', '比较所选 2–4 张'], ['Esc', '退出专注模式 / 回到网格'], ['Z', '放大到 100% / 适合窗口'], ['⌘+ / ⌘− / ⌘0', '放大一档、缩小一档（50% / 100% / 200%）/ 适合窗口；触控板捏合任意比例'], ['I', '单张视图的参数浮层'],
   ['F', '专注模式：单张、比较时隐藏侧栏、检查器、工具栏'], ['\\', '显示 / 隐藏筛选条'],
   ['B', '加入上一次用过的收藏夹'], ['⇧B', '加入收藏夹…（选择或新建）'], ['⌫', '在收藏夹里：移出收藏夹'],
   ['⌘A', '全选当前结果'], ['⌘Z / ⇧⌘Z', '撤销 / 重做'], ['⌘E', '导出…'], ['⌘F', '聚焦搜索框'], ['?', '显示这张速查表'],
@@ -1102,6 +1151,9 @@ document.addEventListener('keydown', e => {
     if (k === 'a') { e.preventDefault(); S.sel = new Set(S.result); syncSelClasses(); renderInspector(); renderStatus(); toast(`已全选 ${S.result.length} 张`); }
     else if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     else if (k === 'e') { e.preventDefault(); exportDialog(); }
+    else if (k === '=' || k === '+') { e.preventDefault(); zoomIn(); }
+    else if (k === '-') { e.preventDefault(); zoomOut(); }
+    else if (k === '0') { e.preventDefault(); if (S.zoom) { S.zoom = false; S.zoomScale = 1; renderView(); } }
     return;
   }
   if (inInput) { if (e.key === 'Escape') document.activeElement.blur(); return; }
@@ -1135,7 +1187,7 @@ document.addEventListener('keydown', e => {
           if (loc) { const name = volById(loc.vol).name; const orphaned = discoveredGone(loc.vol, [p.id]);
             toast(`原片已不在「${name}」上：位置改为历史${orphaned ? '，这张照片已没有现存位置，移到「无卷关联照片」' : ''}`); if (orphaned) break; }
         }
-        S.zoom = !S.zoom; renderView(); } break;
+        S.zoom = !S.zoom; S.zoomScale = 1; renderView(); } break;
     case 'i': case 'I': if (S.view === 'single') { S.info = !S.info; renderSingle(); } break;
     case 'b': if (S.lastColl && collById(S.lastColl)) addToCollection(S.lastColl, targetIds()); else addToCollectionDialog(); break;
     case 'B': addToCollectionDialog(); break;
@@ -1232,7 +1284,7 @@ function confirmBox(title, body, okLabel, danger) {
 }
 function showCtx(e, items) {
   const ctx = $('#ctx');
-  ctx.innerHTML = items.map((it, i) => it ? `<div class="it" data-i="${i}" style="${it[2] ? 'opacity:.4' : ''}"><span>${esc(it[0])}</span><span class="muted">${it[3] || ''}</span></div>` : '<hr>').join('');
+  ctx.innerHTML = items.map((it, i) => it ? `<div class="it" data-i="${i}" style="${it[2] ? 'opacity:.4' : ''}"><span>${esc(typeof it[0] === 'function' ? it[0]() : it[0])}</span><span class="muted">${it[3] || ''}</span></div>` : '<hr>').join('');
   ctx.style.display = 'block';
   ctx.style.left = Math.min(e.clientX, innerWidth - 220) + 'px'; ctx.style.top = Math.min(e.clientY, innerHeight - ctx.offsetHeight - 10) + 'px';
   ctx.onclick = ev => { const d = ev.target.closest('.it'); if (!d) return; const it = items[+d.dataset.i]; if (it[2]) return; hideCtx(); it[1](); };
@@ -1532,11 +1584,16 @@ const MENUS = [
   ['文件', [['（原型）模拟插入一张新卡', simulateInsert], null, ['导出…', () => exportDialog(), '⌘E']]],
   ['图库', [['无卷关联照片…', orphanWindow], null, ['标签设置…', labelSettings], ['新建收藏夹…', () => newCollectionFlow([])]]],
   ['照片', [['加入收藏夹…', addToCollectionDialog, '⇧B'], ['全选当前结果', () => { S.sel = new Set(S.result); syncSelClasses(); renderInspector(); renderStatus(); }, '⌘A'], null, ['撤销', undo, '⌘Z'], ['重做', redo, '⇧⌘Z']]],
-  ['显示', [['网格', () => setView('grid'), '空格'], ['单张', () => setView('single'), '空格'], ['比较', () => setView('compare'), 'C'], null, ['显示 / 隐藏检查器', () => $('#inspBtn').click()]]],
+  ['显示', [['网格', () => setView('grid'), '空格'], ['单张', () => setView('single'), '空格'], ['比较', () => setView('compare'), 'C'], null,
+    ['放大一档', zoomIn, '⌘+'], ['缩小一档', zoomOut, '⌘−'], null,
+    ...Object.entries(VIEWER_BG).map(([k, [name]]) => [() => `背景：${name}${S.viewer.bg === k ? ' ✓' : ''}`, () => setViewer({ bg: k })]),
+    [() => `照片细边框和投影${S.viewer.framed ? ' ✓' : ''}`, () => setViewer({ framed: !S.viewer.framed })],
+    [() => `四周留白：${S.viewer.margin === 'narrow' ? '窄（点一下换宽）' : '宽（点一下换窄）'}`, () => setViewer({ margin: S.viewer.margin === 'narrow' ? 'wide' : 'narrow' })],
+    null, ['显示 / 隐藏检查器', () => $('#inspBtn').click()]]],
   ['帮助', [['快捷键…', showKeys, '?'], ['走查清单', () => { $('#checklist').classList.remove('min', 'hidden'); }]]],
 ];
 function renderMenubar() {
-  $('#menubar').innerHTML = MENUS.map(([t, items], i) => `<div class="m" data-m="${i}">${t}<div class="drop">${items.map((it, j) => it ? `<div class="it" data-mi="${i}:${j}"><span>${esc(it[0])}</span><span class="muted">${it[2] || ''}</span></div>` : '<hr>').join('')}</div></div>`).join('') + `<span class="proto">原型 · 数据只在内存里，刷新即重置</span>`;
+  $('#menubar').innerHTML = MENUS.map(([t, items], i) => `<div class="m" data-m="${i}">${t}<div class="drop">${items.map((it, j) => it ? `<div class="it" data-mi="${i}:${j}"><span>${esc(typeof it[0] === 'function' ? it[0]() : it[0])}</span><span class="muted">${it[2] || ''}</span></div>` : '<hr>').join('')}</div></div>`).join('') + `<span class="proto">原型 · 数据只在内存里，刷新即重置</span>`;
 }
 $('#menubar').addEventListener('click', e => {
   const it = e.target.closest('.it');
