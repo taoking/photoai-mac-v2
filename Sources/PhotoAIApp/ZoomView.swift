@@ -2,8 +2,8 @@ import AppKit
 import PhotoAICore
 import SwiftUI
 
-/// 放大到 100% 的一张照片：原文件读好之前先放大预览（会糊），读好后换上原图。
-/// 顶部一行说明正在看的是什么：原文件、正在读取，或者卷离线只能放大预览。
+/// 放大的一张照片：原文件读好之前先放大已有的图（单张视图换上的原图，或者 1600 预览，会糊），读好后换上原图。
+/// 顶部一行说明比例和正在看的是什么：原文件、正在读取，或者卷离线只能放大预览。
 struct ZoomedPhoto: View {
     @Environment(AppModel.self) private var model
     let id: PhotoID
@@ -19,7 +19,7 @@ struct ZoomedPhoto: View {
         let image: CGImage? = if case .ready(let original, _) = state {
             original
         } else {
-            placeholder?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            model.sharpOriginals[id]?.image ?? placeholder?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         }
         let pixelSize: CGSize = if case .ready(let original, _) = state {
             CGSize(width: original.width, height: original.height)
@@ -34,7 +34,11 @@ struct ZoomedPhoto: View {
                 image: image,
                 pixelSize: pixelSize,
                 center: model.zoomCenter,
+                scale: model.zoomScale,
                 onPan: { model.setZoomCenter($0) },
+                onScale: { model.setZoomScale($0) },
+                onFitScale: { model.fitScale = $0 },
+                onPinchedToFit: { model.endZoom() },
                 onClick: onClick
             )
             Text(note(state))
@@ -54,22 +58,28 @@ struct ZoomedPhoto: View {
     }
 
     private func note(_ state: OriginalState?) -> String {
-        switch state {
-        case .ready(_, let source): "100% · \(source)"
+        let percent = model.zoomPercent
+        return switch state {
+        case .ready(_, let source): "\(percent) · \(source)"
         case .offline(let volumes):
-            "卷离线：只能放大预览；看原图请插入" + volumes.map { "「\($0)」" }.joined(separator: "或")
-        case .unavailable(let reason): reason
-        case .loading, nil: "100% · 正在读取原文件…"
+            "\(percent) · 卷离线：只能放大预览；看原图请插入" + volumes.map { "「\($0)」" }.joined(separator: "或")
+        case .unavailable(let reason): "\(percent) · \(reason)"
+        case .loading, nil: "\(percent) · 正在读取原文件…"
         }
     }
 }
 
-/// 一比一显示：一个图像像素对一个屏幕像素（Retina 屏上按 backing scale 换算）。拖动、滚动平移。
+/// 按比例显示：`scale` 为 1 时一个图像像素对一个屏幕像素（Retina 屏上按 backing scale 换算）。
+/// 拖动、滚动平移；触控板捏合缩放，捏到适合窗口以下就回到适合窗口。
 struct ZoomedImage: NSViewRepresentable {
     let image: CGImage?
     let pixelSize: CGSize
     let center: CGPoint
+    let scale: CGFloat
     let onPan: (CGPoint) -> Void
+    let onScale: (CGFloat) -> Void
+    let onFitScale: (CGFloat) -> Void
+    let onPinchedToFit: () -> Void
     let onClick: () -> Void
 
     func makeNSView(context: Context) -> ZoomScrollView {
@@ -78,17 +88,28 @@ struct ZoomedImage: NSViewRepresentable {
 
     func updateNSView(_ view: ZoomScrollView, context: Context) {
         view.onPan = onPan
+        view.onScale = onScale
+        view.onFitScale = onFitScale
+        view.onPinchedToFit = onPinchedToFit
         view.onClick = onClick
-        view.update(image: image, pixelSize: pixelSize, center: center)
+        view.update(image: image, pixelSize: pixelSize, center: center, scale: scale)
     }
 }
 
+/// 画布按一比一的大小摆（像素 ÷ backing scale），比例交给 NSScrollView 的 magnification，捏合由它处理。
 final class ZoomScrollView: NSScrollView {
     var onPan: ((CGPoint) -> Void)?
+    var onScale: ((CGFloat) -> Void)?
+    var onFitScale: ((CGFloat) -> Void)?
+    var onPinchedToFit: (() -> Void)?
     var onClick: (() -> Void)?
     private let canvas = ZoomCanvas()
     private var pixelSize = CGSize(width: 1, height: 1)
     private var wantedCenter = CGPoint(x: 0.5, y: 0.5)
+    private var wantedScale: CGFloat = 1
+    private var fitScale: CGFloat = 0
+    /// 正在捏合：这时不按模型里的比例去改，免得和手指打架。
+    private var inLiveMagnify = false
     private var image: CGImage?
     /// 程序自己在滚动：不回报中心，免得几个格子互相推。
     private var applyingCenter = false
@@ -107,6 +128,14 @@ final class ZoomScrollView: NSScrollView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(boundsChanged), name: NSView.boundsDidChangeNotification, object: contentView
         )
+        allowsMagnification = true
+        maxMagnification = AppModel.maximumZoom
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(liveMagnifyStarted), name: NSScrollView.willStartLiveMagnifyNotification, object: self
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(liveMagnifyEnded), name: NSScrollView.didEndLiveMagnifyNotification, object: self
+        )
         canvas.onClick = { [weak self] in self?.onClick?() }
     }
 
@@ -115,25 +144,61 @@ final class ZoomScrollView: NSScrollView {
 
     deinit { NotificationCenter.default.removeObserver(self) }
 
-    func update(image: CGImage?, pixelSize: CGSize, center: CGPoint) {
+    func update(image: CGImage?, pixelSize: CGSize, center: CGPoint, scale: CGFloat) {
         if image !== self.image {
             self.image = image
             canvas.image = image
         }
         wantedCenter = center
+        let scaleChanged = abs(scale - wantedScale) > 0.001
+        wantedScale = scale
         if pixelSize != self.pixelSize {
             self.pixelSize = pixelSize
             resizeCanvas()
+        } else if scaleChanged {
+            applyScale()
         } else if distance(currentCenter, center) > 0.001 {
             scroll(to: center)
         }
     }
 
-    private var scale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2 }
+    private var backingScale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2 }
 
     private func resizeCanvas() {
-        canvas.setFrameSize(NSSize(width: pixelSize.width / scale, height: pixelSize.height / scale))
+        canvas.setFrameSize(NSSize(width: pixelSize.width / backingScale, height: pixelSize.height / backingScale))
+        updateFitScale()
+        applyScale()
+    }
+
+    private func applyScale() {
+        guard !inLiveMagnify else { return }
+        applyingCenter = true
+        if abs(magnification - wantedScale) > 0.001 { magnification = wantedScale }
+        applyingCenter = false
         scroll(to: wantedCenter)
+    }
+
+    /// 整张照片正好放进可视区域的比例。捏合最小到这里，再往小捏就回到适合窗口。
+    private func updateFitScale() {
+        let size = canvas.frame.size
+        guard size.width > 0, size.height > 0, bounds.width > 0, bounds.height > 0 else { return }
+        let fit = min(bounds.width / size.width, bounds.height / size.height)
+        guard abs(fit - fitScale) > 0.0001 else { return }
+        fitScale = fit
+        minMagnification = min(fit, AppModel.zoomSteps[0])
+        onFitScale?(fit)
+    }
+
+    @objc private func liveMagnifyStarted() { inLiveMagnify = true }
+
+    @objc private func liveMagnifyEnded() {
+        inLiveMagnify = false
+        if magnification <= fitScale * 1.02 {
+            onPinchedToFit?()
+        } else {
+            wantedScale = magnification
+            onScale?(magnification)
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -149,6 +214,7 @@ final class ZoomScrollView: NSScrollView {
     override func layout() {
         super.layout()
         // 窗口大小变了，画面中心不动。
+        updateFitScale()
         scroll(to: wantedCenter)
     }
 
@@ -176,6 +242,11 @@ final class ZoomScrollView: NSScrollView {
         guard !applyingCenter else { return }
         wantedCenter = currentCenter
         onPan?(wantedCenter)
+        // 捏合中：比例随时报上去，比较视图的其他格跟着变，角上的比例也跟着变。
+        if inLiveMagnify, abs(magnification - wantedScale) > 0.001 {
+            wantedScale = magnification
+            onScale?(magnification)
+        }
     }
 
     private func clamp(_ value: CGFloat) -> CGFloat { min(max(value, 0), 1) }
@@ -243,8 +314,9 @@ final class ZoomCanvas: NSView {
         if abs(delta.x) + abs(delta.y) > 2 { dragged = true }
         guard dragged else { return }
         NSCursor.closedHand.set()
-        // 窗口坐标 y 向上，画布是翻转的：往下拖，画面跟着往下走。
-        let origin = NSPoint(x: clip.bounds.origin.x - delta.x, y: clip.bounds.origin.y + delta.y)
+        // 窗口坐标 y 向上，画布是翻转的：往下拖，画面跟着往下走。放大后画布上的一点对应屏幕上的 magnification 点。
+        let magnification = enclosingScrollView?.magnification ?? 1
+        let origin = NSPoint(x: clip.bounds.origin.x - delta.x / magnification, y: clip.bounds.origin.y + delta.y / magnification)
         clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
         enclosingScrollView?.reflectScrolledClipView(clip)
         dragStart = point

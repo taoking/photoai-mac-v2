@@ -72,16 +72,13 @@ extension AppModel {
 // MARK: - 放大到 100%
 
 extension AppModel {
-    /// `Z`：单张、比较视图放大到 100%，再按一次回到适合窗口。`center` 是放大到哪里（0–1），不给就放大中间。
+    /// `Z`：单张、比较视图放大到 100%，再按一次回到适合窗口（放大到别的比例时也回到适合窗口）。`center` 是放大到哪里（0–1），不给就放大中间。
     func toggleZoom(at center: CGPoint? = nil) {
         guard viewMode != .grid else { return show("放大用于单张和比较视图") }
         if zoomed {
-            zoomed = false
-            originals = [:]
+            endZoom()
         } else {
-            zoomCenter = center ?? CGPoint(x: 0.5, y: 0.5)
-            zoomed = true
-            loadOriginalsForZoom()
+            zoom(to: 1, at: center)
         }
     }
 
