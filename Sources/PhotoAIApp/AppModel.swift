@@ -232,12 +232,18 @@ final class AppModel {
         watcher = VolumeWatcher { [weak self] event in
             Task { @MainActor in self?.handle(event) }
         }
-        // 启动时核对预览文件，再为在线卷续做没完成的预览。
+        // 启动时核对预览文件（M3 之前的库再按缩略图校正一次照片尺寸），再为在线卷续做没完成的预览。
         let library = library!
         Task.detached(priority: .utility) {
-            _ = try? PreviewGenerator(library: library).verifyReadyFiles()
+            let generator = PreviewGenerator(library: library)
+            _ = try? generator.verifyReadyFiles()
+            let corrected = (try? library.correctDimensionsFromThumbnails(store: generator.store)) ?? 0
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                if corrected > 0 {
+                    Measurements.emit("按缩略图校正了 \(corrected) 张照片的尺寸")
+                    reloadPhotos(reason: .scan)
+                }
                 for (id, _) in onlineVolumes { enqueueScan(id) }
                 startPreviews()
             }

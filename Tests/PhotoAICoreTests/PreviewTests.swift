@@ -68,6 +68,44 @@ import Testing
         #expect(try temp.library.db.scalarInt("SELECT preview_file_id FROM photos WHERE id = ?;", [photo.id]) == jpegFile)
     }
 
+    /// 机内 16:9 裁切：RAW 是 3:2，JPEG 是 16:9。照片的尺寸以生成预览的 JPEG 为准（计划 V-4）。
+    @Test func dimensionsFollowPreviewSource() async throws {
+        let temp = try TemporaryLibrary()
+        let card = try FakeCard()
+        let date = "2026:08:12 10:00:01"
+        try SampleImages.writeJPEG(to: card.url("DCIM/100MSDCF/DSC00001.ARW"), width: 2400, height: 1600, captureDate: date)
+        try SampleImages.writeJPEG(to: card.url("DCIM/100MSDCF/DSC00001.JPG"), width: 2400, height: 1350, captureDate: date)
+        let volume = try await importCard(card, into: temp)
+        let photo = try #require(try temp.reader.photos(in: .all).first)
+        #expect(photo.hasRaw && photo.hasJPEG)
+
+        try await PreviewRunner(generator: PreviewGenerator(library: temp.library)).run(mountURLs: [volume.id: card.root])
+        let ready = try #require(try temp.reader.photos(in: .all).first)
+        #expect(ready.width == 2400 && ready.height == 1350)
+    }
+
+    /// 旧库：尺寸记成了 RAW 的，按缩略图的比例校正一次，之后不再做。
+    @Test func oldLibraryDimensionsAreCorrectedOnce() async throws {
+        let temp = try TemporaryLibrary()
+        let card = try FakeCard()
+        try SampleImages.writeJPEG(to: card.url("DCIM/100MSDCF/DSC00001.JPG"), width: 2400, height: 1350, captureDate: "2026:08:12 10:00:01")
+        try SampleImages.writeJPEG(to: card.url("DCIM/100MSDCF/DSC00002.JPG"), width: 1600, height: 2400, captureDate: "2026:08:12 10:00:02")
+        let volume = try await importCard(card, into: temp)
+        let generator = PreviewGenerator(library: temp.library)
+        try await PreviewRunner(generator: generator).run(mountURLs: [volume.id: card.root])
+        try temp.library.db.run("UPDATE photos SET width = 2400, height = 1600 WHERE base_name = 'DSC00001';")
+
+        #expect(try temp.library.correctDimensionsFromThumbnails(store: generator.store) == 1)
+        let photos = try temp.reader.photos(in: .all)
+        let wide = try #require(photos.first { $0.baseName == "DSC00001" })
+        let tall = try #require(photos.first { $0.baseName == "DSC00002" })
+        #expect(wide.width == 2400 && wide.height == 1350)
+        #expect(tall.width == 1600 && tall.height == 2400)
+
+        try temp.library.db.run("UPDATE photos SET width = 2400, height = 1600 WHERE base_name = 'DSC00001';")
+        #expect(try temp.library.correctDimensionsFromThumbnails(store: generator.store) == 0)
+    }
+
     /// 生成中拔盘：读不到来源的照片保持 pending；重新插上后续做。
     @Test func unplugDuringGenerationResumesLater() async throws {
         let temp = try TemporaryLibrary()

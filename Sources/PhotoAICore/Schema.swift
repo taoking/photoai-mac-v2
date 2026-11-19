@@ -132,6 +132,13 @@ enum Schema {
         ) WITHOUT ROWID;
         CREATE INDEX photo_labels_label ON photo_labels(label_id);
         CREATE INDEX collection_members_photo ON collection_members(photo_id);
+        """,
+        // 3：库级别的一次性整理做没做过（比如按预览校正照片尺寸）。
+        """
+        CREATE TABLE library_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        ) WITHOUT ROWID;
         """
     ]
 
