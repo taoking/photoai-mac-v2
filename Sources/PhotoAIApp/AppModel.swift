@@ -172,7 +172,11 @@ final class AppModel {
                 photoCount = photos.count
                 let visible = Set(photos.map(\.id))
                 selectedPhotoIDs.formIntersection(visible)
-                let label = reason == .launch ? "PF-3 首次加载" : "PF-3 切换到 \(scope)"
+                let label = switch reason {
+                case .launch: "PF-3 首次加载"
+                case .selection: "PF-3 切换到 \(scope)"
+                case .scan, .external: "刷新 \(scope)"
+                }
                 // 下一轮主循环时网格已经按新数据重载，计时到这里。
                 DispatchQueue.main.async { Measurements.record(label, since: started, count: photos.count) }
                 if reason == .launch, photos.isEmpty { firstScreenShown() }
@@ -304,6 +308,7 @@ final class AppModel {
     private func offerNewVolume(_ info: MountedVolumes.Info) {
         guard !ignoredVolumeUUIDs.contains(info.uuid), !pendingVolumes.contains(where: { $0.id == info.uuid }) else { return }
         pendingVolumes.append(PendingVolume(info: info))
+        if Measurements.isEnabled { Measurements.emit("检测到新卷 \(info.name)，等用户选择“添加…”或“忽略”") }
     }
 
     func ignore(_ pending: PendingVolume) {
