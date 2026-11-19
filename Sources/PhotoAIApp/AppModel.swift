@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Observation
 import PhotoAICore
 import Synchronization
@@ -99,6 +100,8 @@ final class AppModel {
     var selectionVersion = 0
     var viewMode: ViewMode = .grid
     var focusMode = false
+    /// 侧栏是否显示（工具栏按钮收起 / 展开）；专注模式另外隐藏，不改这里。
+    var sidebarVisibility: NavigationSplitViewVisibility = .all
     var filterBarVisible = true
     /// 单张视图左上角的参数浮层（I）。
     var showInfoOverlay = false

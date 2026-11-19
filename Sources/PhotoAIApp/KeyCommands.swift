@@ -169,7 +169,9 @@ final class KeyRouter {
         let responder = window.firstResponder
         let isEditing = responder is NSText
         let isMainWindow = window.identifier?.rawValue.hasPrefix("main") == true && window.attachedSheet == nil
-        if isEditing || !isMainWindow {
+        if isEditing {
+            // Esc、回车照常走窗口：面板的“取消”“确定”按钮要收到。
+            if event.keyCode == 53 { return false }
             let modifiers = command.shortcut.modifiers
             if modifiers.contains(.command) {
                 // 文本框里的 ⌘A / ⌘Z 是文字的全选和撤销。
@@ -184,6 +186,8 @@ final class KeyRouter {
             responder?.keyDown(with: event)
             return true
         }
+        // 面板、提示框里不执行选片命令（`perform` 也会再挡一次）。
+        guard isMainWindow else { return false }
         model.perform(command)
         return true
     }

@@ -307,6 +307,12 @@ final class ScenarioRunner {
             press("b", keyCode: 11, window: window)
             check(editor?.string.hasSuffix("1b") == true, "在名字框里按 1、B 是输入文字（\(editor?.string ?? "")）")
             check(model.photo(model.focusedPhotoID!)!.rating == rating, "名字框里按 1 不会给照片打星")
+            model.perform(.rate(rating == 5 ? 4 : 5))
+            check(model.photo(model.focusedPhotoID!)!.rating == rating, "面板开着时菜单里的命令不执行")
+            press("\u{1b}", keyCode: 53, window: window)
+        }
+        step("Esc 关掉面板") { [self] in
+            check(model.activeSheet == nil, "在名字框里按 Esc 关掉面板（取消）")
             model.activeSheet = nil
         }
         step("标签设置") { [self] in

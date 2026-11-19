@@ -10,8 +10,8 @@ struct MainWindow: View {
     var body: some View {
         @Bindable var model = model
         NavigationSplitView(columnVisibility: Binding(
-            get: { model.focusMode ? .detailOnly : .all },
-            set: { if !model.focusMode { _ = $0 } }
+            get: { model.focusMode ? .detailOnly : model.sidebarVisibility },
+            set: { if !model.focusMode { model.sidebarVisibility = $0 } }
         )) {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)

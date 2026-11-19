@@ -109,7 +109,9 @@ extension AppModel {
 
 extension AppModel {
     func perform(_ command: PhotoCommand) {
-        guard activeSheet == nil, library != nil else { return }
+        guard activeSheet == nil, volumeToAdd == nil, library != nil else { return }
+        // 主窗口上开着面板或提示框时（比如改名框），菜单里的命令也不执行。
+        if let key = NSApp.keyWindow, key.identifier?.rawValue.hasPrefix("main") != true || key.attachedSheet != nil { return }
         let started = Date()
         switch command {
         case .previous: move(-1)
