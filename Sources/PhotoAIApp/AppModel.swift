@@ -37,9 +37,13 @@ enum ActiveSheet: Identifiable, Equatable {
     case renameCollection(CollectionID)
     case labelSettings
     case shortcuts
+    case export(ExportRange)
+    case exportResult(ExportReport)
 
     var id: String {
         switch self {
+        case .export: "export"
+        case .exportResult: "export-result"
         case .addToCollection: "add"
         case .newCollection: "new"
         case .renameCollection(let id): "rename-\(id)"
@@ -73,7 +77,7 @@ final class ScanCancellation: Sendable {
 @Observable
 final class AppModel {
     private(set) var library: Library?
-    private var reader: LibraryReader?
+    private(set) var reader: LibraryReader?
     private(set) var launchError: String?
 
     var selection: SidebarItem = .all {
@@ -95,7 +99,9 @@ final class AppModel {
     /// 选中的照片。网格里点选、⇧ / ⌘ 点选都会改它；键盘移动时只留焦点那一张。
     var selectedPhotoIDs: Set<PhotoID> = []
     /// 焦点照片：单张视图显示的那张，键盘移动的起点。
-    var focusedPhotoID: PhotoID?
+    var focusedPhotoID: PhotoID? {
+        didSet { if zoomed, oldValue != focusedPhotoID { loadOriginalsForZoom() } }
+    }
     /// 键盘、全选等由模型改了选择时加一，网格据此同步选中状态并滚到焦点。
     var selectionVersion = 0
     var viewMode: ViewMode = .grid
@@ -109,6 +115,17 @@ final class AppModel {
     var autoAdvance = false
     /// 比较视图里的焦点格。
     var compareFocus = 0
+    /// `Z` 放大到 100%（单张、比较视图）。
+    var zoomed = false
+    /// 放大时画面中心落在照片上的哪里（0–1，左上为原点），比较视图各格共用，平移同步。
+    var zoomCenter = CGPoint(x: 0.5, y: 0.5)
+    /// 放大时各张照片的原文件读到哪一步。只留当前看的几张，解码后的原图很占内存。
+    var originals: [PhotoID: OriginalState] = [:]
+    /// 导出进行中：状态栏的进度。
+    var exportStatus: String?
+    @ObservationIgnored var exportCancellation: ScanCancellation?
+    /// 上一次导出的结果（验收场景核对用）。
+    @ObservationIgnored var lastExportReport: ExportReport?
     var activeSheet: ActiveSheet?
     var toast: Toast?
     var history = EditHistory()

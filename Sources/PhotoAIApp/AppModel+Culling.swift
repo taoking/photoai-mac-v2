@@ -136,9 +136,11 @@ extension AppModel {
                 show(focusMode ? "专注模式：F 或 Esc 退出" : "已退出专注模式")
             }
         case .escape:
-            if focusMode { focusMode = false } else { setView(.grid) }
+            if zoomed { endZoom() } else if focusMode { focusMode = false } else { setView(.grid) }
         case .toggleFilterBar: filterBarVisible.toggle()
         case .infoOverlay: if viewMode == .single { showInfoOverlay.toggle() }
+        case .zoom: toggleZoom()
+        case .export: beginExport()
         case .addToLastCollection:
             if let id = lastCollectionID, collections.contains(where: { $0.id == id }) {
                 addToCollection(id, photoIDs: targetIDs)
@@ -178,6 +180,7 @@ extension AppModel {
     }
 
     func setView(_ mode: ViewMode) {
+        if mode != viewMode { endZoom() }
         switch mode {
         case .compare:
             guard compareIDs.count >= 2 else {

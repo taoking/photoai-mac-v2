@@ -80,6 +80,10 @@ struct MainWindow: View {
                     .frame(width: 120)
             }
             ToolbarItem {
+                Button { model.perform(.export) } label: { Label("导出…", systemImage: "square.and.arrow.up") }
+                    .help("导出原文件（⌘E）")
+            }
+            ToolbarItem {
                 Button { model.showInspector.toggle() } label: { Label("检查器", systemImage: "info.circle") }
             }
         }
@@ -93,6 +97,8 @@ struct MainWindow: View {
             case .renameCollection(let id): RenameCollectionSheet(collectionID: id)
             case .labelSettings: LabelSettingsSheet()
             case .shortcuts: ShortcutsSheet()
+            case .export(let range): ExportSheet(range: range)
+            case .exportResult(let report): ExportResultSheet(report: report)
             }
         }
         .alert("出错了", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
@@ -205,6 +211,7 @@ struct MoreMenu: View {
                 Menu {
                     Text("收藏夹只存引用，移出（⌫）不影响照片")
                     Divider()
+                    Button("导出这个收藏夹…") { model.beginExport(.collection) }
                     Button("改名…") { model.activeSheet = .renameCollection(id) }
                     Button("删除收藏夹…") { confirmingDelete = collection }
                 } label: { Image(systemName: "ellipsis.circle") }
@@ -278,7 +285,7 @@ struct StatusBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if model.scanStatus != nil || model.previewStatus != nil || model.autoAdvance {
+        if model.scanStatus != nil || model.previewStatus != nil || model.exportStatus != nil || model.autoAdvance {
             VStack(spacing: 0) {
                 Divider()
                 HStack(spacing: 16) {
@@ -289,6 +296,12 @@ struct StatusBar: View {
                         Label(preview, systemImage: "photo.stack")
                         Button(model.previewsPaused ? "继续" : "暂停") { model.togglePreviewPause() }
                             .buttonStyle(.link)
+                    }
+                    if let export = model.exportStatus {
+                        Label(export, systemImage: "square.and.arrow.up")
+                        if model.exportCancellation != nil {
+                            Button("取消") { model.cancelExport() }.buttonStyle(.link)
+                        }
                     }
                     Spacer()
                     if model.autoAdvance {
