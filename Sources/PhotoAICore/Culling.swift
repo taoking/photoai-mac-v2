@@ -237,14 +237,23 @@ extension LibraryReader {
         }
     }
 
-    /// 每张照片的标签，按标签位置排序。只含正在用的标签。
-    public func photoLabels() throws -> [PhotoID: [LabelID]] {
+    /// 每张照片的标签，按标签位置排序。只含正在用的标签。给了范围时只读这个范围里的可见照片。
+    public func photoLabels(in scope: PhotoScope? = nil) throws -> [PhotoID: [LabelID]] {
         var result: [PhotoID: [LabelID]] = [:]
+        var restriction = ""
+        var arguments: [any SQLBindable] = []
+        if let scope {
+            let (condition, scopeArguments) = Self.condition(for: scope)
+            restriction = "AND pl.photo_id IN (SELECT p.id FROM photos p WHERE p.present_location_count > 0 AND \(condition))"
+            arguments = scopeArguments
+        }
         try db.query(
             """
             SELECT pl.photo_id, pl.label_id FROM photo_labels pl JOIN labels l ON l.id = pl.label_id
-            WHERE l.name != '' ORDER BY pl.photo_id, l.sort_order;
-            """
+            WHERE l.name != '' \(restriction)
+            ORDER BY pl.photo_id, l.sort_order;
+            """,
+            arguments
         ) { result[$0.int(0), default: []].append($0.int(1)) }
         return result
     }

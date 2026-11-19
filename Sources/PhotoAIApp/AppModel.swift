@@ -12,6 +12,7 @@ enum SidebarItem: Hashable {
     case day(String)
     case undated
     case volume(VolumeID)
+    case collection(CollectionID)
 
     var scope: PhotoScope {
         switch self {
@@ -20,6 +21,29 @@ enum SidebarItem: Hashable {
         case .year(let prefix), .month(let prefix), .day(let prefix): .datePrefix(prefix)
         case .undated: .undated
         case .volume(let id): .volume(id)
+        case .collection(let id): .collection(id)
+        }
+    }
+}
+
+/// 内容区的三种视图，在同一块区域里切换（设计稿 §6）。
+enum ViewMode { case grid, single, compare }
+
+/// 主窗口上弹出的面板。同一时间只有一个。
+enum ActiveSheet: Identifiable, Equatable {
+    case addToCollection([PhotoID])
+    case newCollection([PhotoID])
+    case renameCollection(CollectionID)
+    case labelSettings
+    case shortcuts
+
+    var id: String {
+        switch self {
+        case .addToCollection: "add"
+        case .newCollection: "new"
+        case .renameCollection(let id): "rename-\(id)"
+        case .labelSettings: "labels"
+        case .shortcuts: "shortcuts"
         }
     }
 }
@@ -52,18 +76,76 @@ final class AppModel {
     private(set) var launchError: String?
 
     var selection: SidebarItem = .all {
-        didSet { if oldValue != selection { reloadPhotos(reason: .selection) } }
+        didSet {
+            guard oldValue != selection else { return }
+            if viewMode == .compare { viewMode = .grid }
+            selectedPhotoIDs = []
+            focusedPhotoID = nil
+            reloadPhotos(reason: .selection)
+        }
     }
     var sort: PhotoSort = .captureDateDescending {
-        didSet { if oldValue != sort { reloadPhotos(reason: .selection) } }
+        didSet { if oldValue != sort { reloadPhotos(reason: .resort) } }
     }
-    var selectedPhotoIDs: Set<PhotoID> = []
     var thumbnailSize: Double = 160
 
-    private(set) var sections: [DaySection] = [] { didSet { sectionsVersion += 1 } }
+    // MARK: 选片状态
+
+    /// 选中的照片。网格里点选、⇧ / ⌘ 点选都会改它；键盘移动时只留焦点那一张。
+    var selectedPhotoIDs: Set<PhotoID> = []
+    /// 焦点照片：单张视图显示的那张，键盘移动的起点。
+    var focusedPhotoID: PhotoID?
+    /// 键盘、全选等由模型改了选择时加一，网格据此同步选中状态并滚到焦点。
+    var selectionVersion = 0
+    var viewMode: ViewMode = .grid
+    var focusMode = false
+    var filterBarVisible = true
+    /// 单张视图左上角的参数浮层（I）。
+    var showInfoOverlay = false
+    var showInspector = true
+    var autoAdvance = false
+    /// 比较视图里的焦点格。
+    var compareFocus = 0
+    var activeSheet: ActiveSheet?
+    var toast: Toast?
+    var history = EditHistory()
+    var labels: [LabelRecord] = []
+    var collections: [CollectionRecord] = []
+    var lastCollectionID: CollectionID?
+    /// 侧栏每一项各自记住的筛选条件。
+    var filters: [SidebarItem: PhotoFilter] = [:]
+
+    /// 当前侧栏项的全部可见照片（排好序），星级、标签等随改动更新。
+    @ObservationIgnored var source: [PhotoSummary] = []
+    @ObservationIgnored var sourceIndex: [PhotoID: Int] = [:]
+    /// 当前结果：按筛选条件筛出的照片。打星、打标签时保持不变，点“刷新结果”或改条件才重新筛。
+    @ObservationIgnored var resultIDs: [PhotoID] = []
+    @ObservationIgnored var resultIndex: [PhotoID: Int] = [:]
+    /// 照片在网格里的位置（分组、组内序号）。
+    @ObservationIgnored var gridPositions: [PhotoID: IndexPath] = [:]
+    /// 网格当前每行几格，↑ ↓ 换行用。由网格的布局告诉模型。
+    @ObservationIgnored var gridColumns = 1
+    /// 结果里已经不符合当前条件的张数（“刷新结果”按钮上的数字）。
+    var staleCount = 0
+    /// 星级、标签、标记改动后加一；`changedPhotoIDs` 是这次改了的照片，网格只重画这些格子。
+    var marksVersion = 0
+    @ObservationIgnored var changedPhotoIDs: Set<PhotoID> = []
+    @ObservationIgnored let thumbnails = ThumbnailLoader()
+    @ObservationIgnored let previews = PreviewImageLoader()
+    @ObservationIgnored private var keyRouter: KeyRouter?
+    @ObservationIgnored private var scenarioRunner: ScenarioRunner?
+
+    var sections: [DaySection] = [] { didSet { sectionsVersion += 1 } }
     /// 每次换一组照片加一，网格靠它判断要不要重载，不去比较十万条数据。
-    private(set) var sectionsVersion = 0
-    private(set) var photoCount = 0
+    var sectionsVersion = 0
+    /// 当前结果的张数。
+    var photoCount = 0
+    /// 当前侧栏项一共有几张（筛选之前）。
+    var sourceCount = 0
+    /// 焦点照片的星级、标签等变了，检查器重读详情。
+    var detailVersion = 0
+    /// 单张视图翻页开始的时间（PF-7 从这里计到大图画出来）。
+    @ObservationIgnored var pageStarted: Date?
     private(set) var volumes: [VolumeRecord] = []
     private(set) var volumeCounts: [VolumeID: Int] = [:]
     private(set) var volumeStats: [VolumeID: VolumeStats] = [:]
@@ -115,10 +197,14 @@ final class AppModel {
             self.library = library
             reader = try library.makeReader()
             dataVersion = try? library.dataVersion()
+            labels = try library.reader.labels()
         } catch {
             launchError = "打不开照片库：\(error)"
             return
         }
+        thumbnails.store = previewStore
+        previews.store = previewStore
+        keyRouter = KeyRouter(model: self)
         refreshMounts()
         reloadSidebar()
         reloadPhotos(reason: .launch)
@@ -142,13 +228,16 @@ final class AppModel {
     func windowDidBecomeKey() {
         guard let library, let version = try? library.dataVersion(), version != dataVersion else { return }
         dataVersion = version
+        // 别的进程可能改了星级、标签、收藏夹：撤销记录里的“改动前”已经不可信。
+        history.removeAll()
         reloadSidebar()
         reloadPhotos(reason: .external)
     }
 
     // MARK: - 读数据
 
-    enum ReloadReason { case launch, selection, scan, external }
+    /// `selection`、`resort`、`launch` 按条件重新筛；`scan`、`external` 保持当前结果（新出现的照片按条件加进来）。
+    enum ReloadReason { case launch, selection, resort, scan, external, collectionChanged }
 
     func reloadPhotos(reason: ReloadReason) {
         guard let reader else { return }
@@ -165,17 +254,14 @@ final class AppModel {
                 await MainActor.run { [weak self] in self?.errorMessage = "读取照片失败：\(error)" }
                 return
             }
-            let sections = Self.group(photos, by: sort)
             await MainActor.run { [weak self] in
                 guard let self, generation == reloadGeneration else { return }
-                self.sections = sections
-                photoCount = photos.count
-                let visible = Set(photos.map(\.id))
-                selectedPhotoIDs.formIntersection(visible)
+                setSource(photos, keepResult: [.scan, .external, .collectionChanged].contains(reason))
                 let label = switch reason {
                 case .launch: "PF-3 首次加载"
                 case .selection: "PF-3 切换到 \(scope)"
-                case .scan, .external: "刷新 \(scope)"
+                case .resort: "排序 \(sort)"
+                case .scan, .external, .collectionChanged: "刷新 \(scope)"
                 }
                 // 下一轮主循环时网格已经按新数据重载，计时到这里。
                 DispatchQueue.main.async { Measurements.record(label, since: started, count: photos.count) }
@@ -196,6 +282,8 @@ final class AppModel {
                 let undated = try reader.undatedCount()
                 let batches = try reader.importBatches()
                 let photoVolumes = try reader.photoVolumes()
+                let collections = try reader.collections()
+                let labels = try reader.labels()
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     self.volumes = volumes
@@ -205,6 +293,8 @@ final class AppModel {
                     undatedCount = undated
                     importBatches = batches
                     self.photoVolumes = photoVolumes
+                    self.collections = collections
+                    self.labels = labels
                     if Measurements.isEnabled {
                         Measurements.emit("侧栏：卷 \(volumes.count) 个，日期 \(days.count) 天，导入批次 \(batches.count) 个")
                     }
@@ -215,8 +305,11 @@ final class AppModel {
         }
     }
 
-    nonisolated static func group(_ photos: [PhotoSummary], by sort: PhotoSort) -> [DaySection] {
-        guard sort != .fileName else { return photos.isEmpty ? [] : [DaySection(day: nil, photos: photos)] }
+    nonisolated static func group<S: Sequence<PhotoSummary>>(_ photos: S, by sort: PhotoSort) -> [DaySection] {
+        guard sort != .fileName else {
+            let all = Array(photos)
+            return all.isEmpty ? [] : [DaySection(day: nil, photos: all)]
+        }
         var sections: [DaySection] = []
         for photo in photos {
             let day = photo.day
@@ -235,6 +328,14 @@ final class AppModel {
         reportedLaunch = true
         Measurements.recordLaunch(since: launchStart, count: photoCount)
         if ProcessInfo.processInfo.environment["PHOTOAI_SWITCH_TEST"] == "1" { runSwitchTest() }
+        if let scenario = ProcessInfo.processInfo.environment["PHOTOAI_SCENARIO"] {
+            // 等侧栏数据和启动时的自动重扫都到了再开始。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self else { return }
+                scenarioRunner = ScenarioRunner(model: self, mode: scenario)
+                scenarioRunner?.start()
+            }
+        }
     }
 
     /// PF-3：依次切到每个卷、一个月、一天，再回到全部照片，每步之间停 0.6 秒。
@@ -247,9 +348,10 @@ final class AppModel {
         let month = dayCounts.dropFirst(200).first.map { String($0.day.prefix(7)) }
         let day = dayCounts.dropFirst(300).first?.day
         var steps: [SidebarItem] = volumes.map { .volume($0.id) }
-        Measurements.emit("PF-3 切换测试：卷 \(volumes.count) 个，日期 \(dayCounts.count) 天")
+        Measurements.emit("PF-3 切换测试：卷 \(volumes.count) 个，日期 \(dayCounts.count) 天，收藏夹 \(collections.count) 个")
         if let month { steps.append(.month(month)) }
         if let day { steps.append(.day(day)) }
+        steps += collections.map { .collection($0.id) }
         steps.append(.all)
         for (index, step) in steps.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6 * Double(index + 1)) { [weak self] in
@@ -264,8 +366,9 @@ final class AppModel {
         return !volumes.contains { onlineVolumes[$0] != nil }
     }
 
-    func detail(of photo: PhotoID) -> PhotoDetail? {
-        try? reader?.detail(of: photo)
+    func loadDetail(of photo: PhotoID) async -> PhotoDetail? {
+        guard let reader else { return nil }
+        return await Task.detached(priority: .userInitiated) { try? reader.detail(of: photo) }.value
     }
 
     // MARK: - 卷

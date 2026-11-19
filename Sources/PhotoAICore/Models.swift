@@ -96,6 +96,14 @@ public struct CollectionRecord: Sendable, Equatable, Identifiable, Hashable {
     public var lastUsedAt: Date?
     /// 可见的成员数（隐藏的照片仍是成员，但不计数、不显示）。
     public var photoCount: Int
+
+    public init(id: CollectionID, name: String, createdAt: Date, lastUsedAt: Date?, photoCount: Int) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.lastUsedAt = lastUsedAt
+        self.photoCount = photoCount
+    }
 }
 
 /// 侧栏或命令行选的一组照片。

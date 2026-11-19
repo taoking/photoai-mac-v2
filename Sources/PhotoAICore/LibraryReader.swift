@@ -85,7 +85,7 @@ public struct LibraryReader: Sendable {
         case .fileName:
             order = "p.base_name COLLATE NOCASE, p.capture_date"
         }
-        let labels = try photoLabels()
+        let labels = try photoLabels(in: scope == .all ? nil : scope)
         return try db.all(
             """
             SELECT p.id, p.base_name, p.capture_date, p.width, p.height, p.rating, p.flag, p.thumb_state,
