@@ -147,12 +147,17 @@ extension ScenarioRunner {
         }
         step("单击某处放大到那里") { [self] in
             model.openSingle(model.resultIDs[1])
-            model.toggleZoom(at: CGPoint(x: 0.25, y: 0.75))
+            model.clickZoom(at: CGPoint(x: 0.25, y: 0.75))
         }
         wait("读好原图", timeout: 30) { [self] in ready(model.focusedPhotoID) != nil }
         step("核对位置") { [self] in
-            let centers = zoomCenters()
-            check(centers.count == 1 && near(centers[0], CGPoint(x: 0.25, y: 0.75)), "画面中心在单击的位置：\(centers)")
+            // 50% 时照片边缘不会滚进画面，单击靠边时画面中心停在能到的最近位置。
+            let clicked = CGPoint(x: 0.25, y: 0.75)
+            let centers = zoomCenters(), expected = zoomViews().first.map { $0.reachableCenter(clicked) }
+            check(centers.count == 1 && expected.map { near(centers[0], $0) } == true,
+                  "画面中心在单击的位置（能到的最近处 \(expected.map { "\($0)" } ?? "?")）：\(centers)")
+            check(near(model.zoomCenter, clicked), "想看的位置还是单击处，没被视图出现时的滚动改掉：\(model.zoomCenter)")
+            check(model.zoomScale == AppModel.clickZoomScale, "单击放大到 50%：\(model.zoomPercent)")
             model.perform(.zoom)
             check(!model.zoomed, "再按 Z 回到适合窗口")
             model.setView(.grid)

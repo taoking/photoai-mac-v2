@@ -87,6 +87,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  key('-',{metaKey:true}); ok(S.zoomScale===1,'⌘− 到 100%');
  key('-',{metaKey:true}); key('-',{metaKey:true}); ok(!S.zoom&&S.view==='single','⌘− 回到适合窗口');
  key('z'); ok(S.zoom&&S.zoomScale===1,'Z 到 100%'); key('0',{metaKey:true}); ok(!S.zoom,'⌘0 适合窗口');
+ simg().click(); ok(S.zoom&&S.zoomScale===0.5,'单击照片放大到 50%'); simg().click(); ok(!S.zoom,'放大时再单击回到适合窗口');
  setView('grid'); setSource({type:'all'}); const off=S.result.find(id=>!isOnline(P[id]));
  focusOnly(off); setView('single'); await sleep(350); ok(ssrc()==='离线'&&simg().classList.contains('soft'),'卷离线：一直是预览');
  setView('grid');
