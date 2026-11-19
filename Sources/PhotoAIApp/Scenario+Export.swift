@@ -11,7 +11,7 @@ import PhotoAICore
 ///
 /// 导出到 `PHOTOAI_EXPORT_DIR`。推出的 B 按 `PHOTOAI_SCENARIO_BACKUP_DMG` 重新挂上。
 extension ScenarioRunner {
-    private var environment: [String: String] { ProcessInfo.processInfo.environment }
+    var environment: [String: String] { ProcessInfo.processInfo.environment }
 
     func buildExport() {
         let output = URL(fileURLWithPath: environment["PHOTOAI_EXPORT_DIR"] ?? NSTemporaryDirectory() + "photoai-m3-export", isDirectory: true)
@@ -299,7 +299,7 @@ extension ScenarioRunner {
 
     // MARK: - 辅助
 
-    private func wait(_ name: String, timeout: TimeInterval, _ condition: @escaping () -> Bool) {
+    func wait(_ name: String, timeout: TimeInterval, _ condition: @escaping () -> Bool) {
         asyncStep(name) { [self] done in
             let deadline = Date().addingTimeInterval(timeout)
             @MainActor func poll() {
@@ -315,7 +315,7 @@ extension ScenarioRunner {
     }
 
     /// 停一会儿（等面板在后台读完位置再截图）。
-    private func pause(_ seconds: TimeInterval) {
+    func pause(_ seconds: TimeInterval) {
         asyncStep("等 \(seconds) 秒") { done in
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { done() }
         }
@@ -342,7 +342,7 @@ extension ScenarioRunner {
         return (image, source)
     }
 
-    private func zoomViews() -> [ZoomScrollView] {
+    func zoomViews() -> [ZoomScrollView] {
         guard let root = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true })?.contentView else { return [] }
         var found: [ZoomScrollView] = []
         func visit(_ view: NSView) {
@@ -357,7 +357,7 @@ extension ScenarioRunner {
         zoomViews().map(\.visibleCenter).map { CGPoint(x: ($0.x * 1000).rounded() / 1000, y: ($0.y * 1000).rounded() / 1000) }
     }
 
-    private func near(_ a: CGPoint, _ b: CGPoint) -> Bool { abs(a.x - b.x) < 0.02 && abs(a.y - b.y) < 0.02 }
+    func near(_ a: CGPoint, _ b: CGPoint) -> Bool { abs(a.x - b.x) < 0.02 && abs(a.y - b.y) < 0.02 }
 
     private func digest(_ url: URL) -> String? {
         guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return nil }
@@ -374,7 +374,7 @@ extension ScenarioRunner {
     }
 
     /// 只删测试映像“卡 A”上的文件。
-    private func removeOnCardA(_ name: String) -> Bool {
+    func removeOnCardA(_ name: String) -> Bool {
         let url = URL(fileURLWithPath: "/Volumes/PAICARDA/DCIM/100MSDCF").appendingPathComponent(name)
         guard url.path.hasPrefix("/Volumes/PAICARDA/") else { return false }
         return (try? FileManager.default.removeItem(at: url)) != nil
