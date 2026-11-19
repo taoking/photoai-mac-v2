@@ -416,6 +416,7 @@ final class AppModel {
     func startPreviews() {
         guard previewTask == nil, !previewsPaused, let library, !onlineVolumes.isEmpty else { return }
         let mounts = onlineVolumes
+        previewMounts = mounts
         let stop = ScanCancellation()
         previewStop = stop
         pendingPreviewTotal = (try? reader?.pendingPreviewCount()) ?? 0
@@ -435,6 +436,8 @@ final class AppModel {
     }
 
     private var lastPreviewReload = Date.distantPast
+    /// 这一轮预览用的在线卷。跑的过程中又插上别的卷，结束后要再跑一轮。
+    private var previewMounts: [VolumeID: URL] = [:]
 
     private func previewProgressed(_ progress: PreviewRunner.Progress, total: Int) {
         previewStatus = "预览 \(progress.ready.formatted()) / \(total.formatted())"
@@ -464,6 +467,9 @@ final class AppModel {
         }
         reloadPhotos(reason: .scan)
         reloadSidebar()
+        if !previewsPaused, Set(onlineVolumes.keys) != Set(previewMounts.keys) {
+            startPreviews()
+        }
     }
 
     func togglePreviewPause() {
