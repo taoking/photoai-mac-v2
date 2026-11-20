@@ -11,6 +11,8 @@ import PhotoAICore
 ///   每张都会在后台换原图（计划 V-3），测它对打星、翻页有没有影响。
 /// - `PHOTOAI_SCENARIO=export`：M3 的导出与 100% 放大，见 `Scenario+Export.swift`。
 /// - `PHOTOAI_SCENARIO=viewing`：观看体验（背景、任意缩放、单张换原图、照片尺寸），见 `Scenario+Viewing.swift`。
+/// - `PHOTOAI_SCENARIO=clearcard`：M4 清卡与无卷关联照片，见 `Scenario+ClearCard.swift`。
+/// - `PHOTOAI_SCENARIO=cli`：M5 命令行和软件一起用，见 `Scenario+CLI.swift`。
 ///
 /// 只用于临时的库（`PHOTOAI_LIBRARY_DIR`），会改动库里的星级、标签和收藏夹。
 /// 每一步都走 `perform(_:)`，和按键走的是同一条路。
@@ -42,6 +44,7 @@ final class ScenarioRunner {
         case "export": buildExport()
         case "viewing": buildViewing()
         case "clearcard": buildClearCard()
+        case "cli": buildCLI()
         default:
             print("FAIL 未知的场景 \(mode)")
             exit(2)

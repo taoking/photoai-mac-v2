@@ -139,6 +139,11 @@ enum Schema {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         ) WITHOUT ROWID;
+        """,
+        // 4：M5 命令行按编号、按文件名找照片。
+        """
+        CREATE INDEX photos_number ON photos(file_number);
+        CREATE INDEX photos_base_name ON photos(base_name COLLATE NOCASE);
         """
     ]
 

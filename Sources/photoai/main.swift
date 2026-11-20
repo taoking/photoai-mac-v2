@@ -1,9 +1,16 @@
 import Foundation
 import PhotoAICore
 
-// 命令行工具 photoai。rate / collect / find 在 M5 实现；现在只有 exif（记录真实样片的身份字段）和验收用的 dev- 命令。
+// 命令行工具 photoai：find / rate / collect 给 Claude skill 用（见 Commands.swift）；
+// exif 记录真实样片的身份字段；dev- 开头的是开发和验收用的命令。
 let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
+case "find":
+    exit(Commands.find(Array(arguments.dropFirst())))
+case "rate":
+    exit(Commands.rate(Array(arguments.dropFirst())))
+case "collect":
+    exit(Commands.collect(Array(arguments.dropFirst())))
 case "exif":
     for path in arguments.dropFirst() {
         let url = URL(fileURLWithPath: path)
@@ -157,6 +164,15 @@ case "dev-audit":
         exit(1)
     }
 default:
-    print("用法：photoai exif <文件>…")
+    print("""
+    用法：
+      photoai find <匹配项>…              找照片，不改任何东西
+      photoai rate <0-5> <匹配项>…        打星（0 是去掉星级）
+      photoai collect <收藏夹> <匹配项>…  加入收藏夹，没有就新建
+      photoai exif <文件>…                看文件的身份字段
+    匹配项：文件名 DSC01926.ARW、去掉扩展名的文件名 DSC01926、编号 1926 或 01926、编号范围 1926-1950；
+    可以写多项，用空格或逗号隔开。只匹配可见照片；一个编号命中多张时取拍摄时间最晚的一张。
+    用 PHOTOAI_LIBRARY_DIR 换库。
+    """)
     exit(arguments.isEmpty ? 0 : 1)
 }
