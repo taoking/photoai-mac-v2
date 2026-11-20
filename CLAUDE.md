@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the v2 rewrite of PhotoAI Mac, a personal photo-culling workbench and preview archive for
 photos spread over many SD cards and external disks. v1 lives in `../photoai-mac` and must not be
-modified from here. The clickable prototype (P0) is approved; there is no native code yet and the
-next step is milestone M1 in `docs/计划.md`.
+modified from here. Milestones M1–M6 are done and released as 0.6.0; all later work (feedback,
+leftover checks, new features) is managed as a backlog and iterations in `docs/迭代.md`.
 
 ## Start here
 
@@ -30,11 +30,11 @@ the user merges. Performance targets PF-1…PF-12 in `docs/计划.md` are accept
 
 ## Prototype
 
-`prototype/index.html` is a single self-contained file (vanilla JS, no network, mock data) and is the
-interaction reference for the native app. Open it with `open prototype/index.html`. After changing
-it, run `prototype/tests/run.sh`, which injects `tests/scenario-harness.html` into the page, drives the
-typical culling scenario in headless Chrome, prints PASS/FAIL lines and exits non-zero on any failure
-(`--self-test` injects a deliberate failure to prove that); extend the harness when adding interactions.
+**Frozen (user decision, 2026-11-20).** `prototype/index.html` was the interaction reference up to M6;
+from 0.6.0 on the native app is the reference and the prototype is no longer updated (the people page,
+inspector histogram/navigator and focus box are not in it). It still opens with `open prototype/index.html`
+and `prototype/tests/run.sh` still runs its scenario, but do not extend it. Native interactions are
+validated with the in-app scenarios (`PHOTOAI_SCENARIO`, see `交接.md`).
 
 ## Conventions
 
