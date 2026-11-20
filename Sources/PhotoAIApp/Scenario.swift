@@ -14,6 +14,7 @@ import PhotoAICore
 /// - `PHOTOAI_SCENARIO=clearcard`：M4 清卡与无卷关联照片，见 `Scenario+ClearCard.swift`。
 /// - `PHOTOAI_SCENARIO=cli`：M5 命令行和软件一起用，见 `Scenario+CLI.swift`。
 /// - `PHOTOAI_SCENARIO=analysis`：M6 后台分析与搜索，见 `Scenario+Analysis.swift`。
+/// - `PHOTOAI_SCENARIO=inspector`：检查器的直方图和导航器，见 `Scenario+Inspector.swift`。
 ///
 /// 只用于临时的库（`PHOTOAI_LIBRARY_DIR`），会改动库里的星级、标签和收藏夹。
 /// 每一步都走 `perform(_:)`，和按键走的是同一条路。
@@ -47,6 +48,7 @@ final class ScenarioRunner {
         case "clearcard": buildClearCard()
         case "cli": buildCLI()
         case "analysis": buildAnalysis()
+        case "inspector": buildInspector()
         default:
             print("FAIL 未知的场景 \(mode)")
             exit(2)

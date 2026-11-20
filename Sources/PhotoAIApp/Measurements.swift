@@ -80,7 +80,18 @@ enum Measurements {
 
     @MainActor
     static func snapshotMainWindow(to url: URL) {
-        // 侧栏的毛玻璃材质画不进来，侧栏会是空白；只用来看内容区。
+        // `PHOTOAI_SNAPSHOT_SCREEN=1`：用系统截图截这个窗口，侧栏、检查器的材质也在（要有屏幕录制权限）。
+        if ProcessInfo.processInfo.environment["PHOTOAI_SNAPSHOT_SCREEN"] == "1",
+           let window = NSApp.windows.first(where: { $0.isVisible }) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-x", "-o", "-l", "\(window.windowNumber)", url.path]
+            if (try? process.run()) != nil {
+                process.waitUntilExit()
+                return
+            }
+        }
+        // 侧栏、检查器的毛玻璃材质画不进来，会是空白；只用来看内容区。
         guard let window = NSApp.windows.first(where: { $0.isVisible }),
               let view = window.contentView?.superview ?? window.contentView,
               let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
