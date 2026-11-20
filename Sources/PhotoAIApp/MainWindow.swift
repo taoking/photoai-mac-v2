@@ -101,6 +101,11 @@ struct MainWindow: View {
             case .exportResult(let report): ExportResultSheet(report: report)
             }
         }
+        .sheet(item: $model.clearCard) { session in
+            ClearCardSheet()
+                .interactiveDismissDisabled(session.backfill?.running == true)
+        }
+        .modifier(RemovalConfirmation())
         .alert("出错了", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("好") { model.errorMessage = nil }
         } message: {
@@ -156,6 +161,12 @@ struct TitleRow: View {
                         Text("\(stats.incompleteDirectoryCount) 个目录没扫完")
                             .font(.caption).foregroundStyle(.orange)
                     }
+                    if stats.missingCopyCount > 0 {
+                        Button("\(stats.missingCopyCount.formatted()) 张缺副本") { model.beginClearCardCheck(id) }
+                            .buttonStyle(.plain)
+                            .font(.caption).foregroundStyle(.orange)
+                            .help("这些照片有文件别处没有副本（按记录算）。点开做清卡检查")
+                    }
                 }
             }
             let filter = model.currentFilter
@@ -202,6 +213,9 @@ struct MoreMenu: View {
                     Divider()
                     Button("重新扫描") { model.enqueueScan(id) }
                         .disabled(model.onlineVolumes[id] == nil)
+                    Divider()
+                    Button("清卡检查…") { model.beginClearCardCheck(id) }
+                    Button("移除卷…") { model.requestRemoval(id) }
                 } label: { Image(systemName: "ellipsis.circle") }
                     .menuStyle(.borderlessButton)
                     .fixedSize()

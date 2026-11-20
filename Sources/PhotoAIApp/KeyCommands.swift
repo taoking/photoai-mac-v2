@@ -229,6 +229,8 @@ struct PhotoCommands: Commands {
             Divider()
             Button("新建收藏夹…") { model.beginNewCollection(adding: []) }
             Button("标签设置…") { model.activeSheet = .labelSettings }
+            Divider()
+            OpenOrphansButton()
         }
         CommandMenu("照片") {
             Menu("星级") { ForEach([1, 2, 3, 4, 5, 0], id: \.self) { item(.rate($0)) } }
@@ -286,5 +288,14 @@ struct PhotoCommands: Commands {
     private func item(_ command: PhotoCommand, title: String? = nil) -> some View {
         Button(title ?? command.title) { model.perform(command) }
             .keyboardShortcut(command.shortcut.key, modifiers: command.shortcut.modifiers)
+    }
+}
+
+/// 菜单“图库 → 无卷关联照片…”：打开单独的窗口（信息架构 §8）。
+struct OpenOrphansButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("无卷关联照片…") { openWindow(id: "orphans") }
     }
 }

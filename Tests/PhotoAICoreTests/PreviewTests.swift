@@ -30,7 +30,7 @@ import Testing
         let temp = try TemporaryLibrary()
         let card = try makeCard(count: 3)
         let volume = try await importCard(card, into: temp)
-        #expect(try temp.reader.volumeStats(volume.id) == VolumeStats(photoCount: 3, previewReadyCount: 0, incompleteDirectoryCount: 0))
+        #expect(try temp.reader.volumeStats(volume.id) == VolumeStats(photoCount: 3, previewReadyCount: 0, incompleteDirectoryCount: 0, missingCopyCount: 3))
 
         let generator = PreviewGenerator(library: temp.library)
         let progress = try await PreviewRunner(generator: generator).run(mountURLs: [volume.id: card.root])

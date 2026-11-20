@@ -244,7 +244,7 @@ extension ScenarioRunner {
         }
     }
 
-    private func photoID(named name: String) -> PhotoID? {
+    func photoID(named name: String) -> PhotoID? {
         model.resultIDs.first { model.photo($0)?.baseName == name }
     }
 
@@ -253,7 +253,7 @@ extension ScenarioRunner {
         zoomViews().map { ($0.magnification * 100).rounded() / 100 }
     }
 
-    private func hdiutil(_ arguments: [String]) -> Bool {
+    func hdiutil(_ arguments: [String]) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
         process.arguments = arguments

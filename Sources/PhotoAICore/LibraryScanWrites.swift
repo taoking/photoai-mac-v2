@@ -236,17 +236,18 @@ extension Library {
     }
 
     /// 这次扫描没走到的已知目录（比如上级目录没列出来、扫描中断）都记为没扫完。
-    func markUnvisitedDirectoriesIncomplete(volumeID: VolumeID, visited: Set<String>, reason: String) throws {
+    /// `under`：只看这个目录和它下面的（只扫一棵子树时）。
+    func markUnvisitedDirectoriesIncomplete(volumeID: VolumeID, visited: Set<String>, under root: String? = nil, reason: String) throws {
         try db.transaction {
             let known = try db.all("SELECT dir_path FROM scan_dirs WHERE volume_id = ?;", [volumeID]) { $0.text(0) ?? "" }
-            for dir in known where !visited.contains(dir) {
+            for dir in known where !visited.contains(dir) && (root.map { Library.isDirectory(dir, inside: $0) } ?? true) {
                 try markDirectoryIncomplete(volumeID: volumeID, dirPath: dir, reason: reason)
             }
         }
     }
 
     /// 整卷的目录都扫完了才更新 `last_scanned_at`。
-    func finishVolumeScan(volumeID: VolumeID, importBatchID: Int?, at time: Date) throws -> Bool {
+    func finishVolumeScan(volumeID: VolumeID, importBatchID: Int?, at time: Date, wholeVolume: Bool = true) throws -> Bool {
         try db.transaction {
             try db.run("UPDATE volumes SET last_seen_at = ? WHERE id = ?;", [time, volumeID])
             if let importBatchID {
@@ -255,7 +256,7 @@ extension Library {
             let incomplete = try db.scalarInt(
                 "SELECT COUNT(*) FROM scan_dirs WHERE volume_id = ? AND state = 'incomplete';", [volumeID]
             )
-            if incomplete == 0 {
+            if incomplete == 0, wholeVolume {
                 try db.run("UPDATE volumes SET last_scanned_at = ? WHERE id = ?;", [time, volumeID])
             }
             return incomplete == 0

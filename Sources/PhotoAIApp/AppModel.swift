@@ -197,6 +197,16 @@ final class AppModel {
     private(set) var photoVolumes: [PhotoID: [VolumeID]] = [:]
 
     var pendingVolumes: [PendingVolume] = []
+    /// 清卡检查面板（M4）。
+    var clearCard: ClearCardSession?
+    /// 等用户确认的移除卷。
+    var removal: RemovalRequest?
+    /// 无卷关联照片窗口的内容；`orphansVersion` 变了窗口重新读。
+    var orphanGroups: [OrphanGroup] = []
+    var orphansVersion = 0
+    /// 刚移除、还插着的卷的挂载点：拔出之前不当新卷提示。
+    @ObservationIgnored var removedMounts: Set<URL> = []
+    @ObservationIgnored var backfillCancellation: ScanCancellation?
     var volumeToAdd: PendingVolume?
     var errorMessage: String?
 
@@ -206,7 +216,7 @@ final class AppModel {
     private(set) var previewsPaused = false
     private var scanQueue: [VolumeID] = []
     private var scanTask: Task<Void, Never>?
-    private var scanningVolume: VolumeID?
+    private(set) var scanningVolume: VolumeID?
     private var scanCancellation: ScanCancellation?
     private var previewTask: Task<Void, Never>?
     private var previewStop: ScanCancellation?
@@ -450,11 +460,13 @@ final class AppModel {
                 scanQueue.removeAll { $0 == id }
             }
             pendingVolumes.removeAll { $0.info.url.standardizedFileURL == url.standardizedFileURL }
+            removedMounts.remove(url.standardizedFileURL)
         }
     }
 
     private func offerNewVolume(_ info: MountedVolumes.Info) {
-        guard !ignoredVolumeUUIDs.contains(info.uuid), !pendingVolumes.contains(where: { $0.id == info.uuid }) else { return }
+        guard !ignoredVolumeUUIDs.contains(info.uuid), !pendingVolumes.contains(where: { $0.id == info.uuid }),
+              !removedMounts.contains(info.url.standardizedFileURL) else { return }
         pendingVolumes.append(PendingVolume(info: info))
         if Measurements.isEnabled { Measurements.emit("检测到新卷 \(info.name)，等用户选择“添加…”或“忽略”") }
     }
@@ -496,6 +508,17 @@ final class AppModel {
             errorMessage = "改名失败：\(error)"
         }
     }
+
+    /// 卷移除后：停掉它的扫描，不再算在线；还插着的话，拔出之前不当新卷提示。
+    func volumeWasRemoved(_ id: VolumeID) {
+        if let mount = onlineVolumes[id] { removedMounts.insert(mount.standardizedFileURL) }
+        onlineVolumes[id] = nil
+        if scanningVolume == id { scanCancellation?.cancel() }
+        scanQueue.removeAll { $0 == id }
+    }
+
+    /// 正在扫或排着队等扫。
+    func isScanning(_ id: VolumeID) -> Bool { scanningVolume == id || scanQueue.contains(id) }
 
     // MARK: - 扫描
 

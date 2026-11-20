@@ -41,6 +41,7 @@ final class ScenarioRunner {
         case "filter": buildFilter()
         case "export": buildExport()
         case "viewing": buildViewing()
+        case "clearcard": buildClearCard()
         default:
             print("FAIL 未知的场景 \(mode)")
             exit(2)

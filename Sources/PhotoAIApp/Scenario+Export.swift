@@ -385,7 +385,7 @@ extension ScenarioRunner {
         return (try? FileManager.default.removeItem(at: url)) != nil
     }
 
-    private func snapshotSheet(_ name: String) {
+    func snapshotSheet(_ name: String) {
         guard let snapshotDirectory, let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }),
               let view = sheet.contentView, let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: representation)

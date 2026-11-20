@@ -116,6 +116,13 @@ public struct EditHistory: Sendable {
         redoStack = redoStack.filter(unrelated)
     }
 
+    /// 无卷关联照片被删掉后，涉及它们的记录一并去掉：SQLite 可能把删掉的编号分给以后导入的新照片。
+    public mutating func forget(photos: Set<PhotoID>) {
+        let unrelated: (Entry) -> Bool = { $0.edit.photoIDs.isDisjoint(with: photos) }
+        undoStack = undoStack.filter(unrelated)
+        redoStack = redoStack.filter(unrelated)
+    }
+
     public mutating func removeAll() {
         undoStack.removeAll()
         redoStack.removeAll()

@@ -74,20 +74,21 @@ public final class Library: @unchecked Sendable {
 
     /// 移除卷：卷记为已移除，卷上的现存位置都变成历史位置，照片的现存位置数同步减少。
     /// 不删照片、预览、评分和收藏夹（设计稿 §4）。
+    /// 每张照片要减的数先按照片汇总一次再更新：写成相关子查询的话，每张照片都要把整个卷的位置扫一遍，
+    /// 合成库里移除一个 2 万张的卷要 100 秒（PF-10）。
     public func removeVolume(_ id: VolumeID) throws {
         try db.transaction {
             try db.run(
                 """
-                UPDATE photos SET present_location_count = present_location_count - (
-                    SELECT COUNT(*) FROM locations l JOIN files f ON f.id = l.file_id
-                    WHERE f.photo_id = photos.id AND l.volume_id = ? AND l.status = 'present'
-                )
-                WHERE id IN (
-                    SELECT f.photo_id FROM locations l JOIN files f ON f.id = l.file_id
+                WITH gone AS (
+                    SELECT f.photo_id AS photo_id, COUNT(*) AS n FROM locations l JOIN files f ON f.id = l.file_id
                     WHERE l.volume_id = ? AND l.status = 'present'
-                );
+                    GROUP BY f.photo_id
+                )
+                UPDATE photos SET present_location_count = present_location_count - gone.n
+                FROM gone WHERE photos.id = gone.photo_id;
                 """,
-                [id, id]
+                [id]
             )
             try db.run("UPDATE locations SET status = 'historical' WHERE volume_id = ? AND status = 'present';", [id])
             try db.run("UPDATE volumes SET status = 'removed', removed_at = ? WHERE id = ?;", [now(), id])
@@ -175,6 +176,11 @@ public final class Library: @unchecked Sendable {
     /// 去掉首尾的 `/`。空字符串表示卷根目录。
     static func normalizedDirectory(_ path: String) -> String {
         path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    /// `dir` 是 `root` 本身或在它下面（相对卷根目录的路径；空字符串是整个卷）。
+    static func isDirectory(_ dir: String, inside root: String) -> Bool {
+        root.isEmpty || dir == root || dir.hasPrefix(root + "/")
     }
 
     static func join(_ directory: String, _ name: String) -> String {
