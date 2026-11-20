@@ -1,6 +1,6 @@
 #!/bin/zsh
 # M6 验收用：后台分析与搜索（PHOTOAI_SCENARIO=analysis）。不需要卡插着，要先装人脸识别模型。
-# 用法：Scripts/m6-analysis-test.sh <工作目录>
+# 用法：Scripts/test/m6-analysis-test.sh <工作目录>
 #
 # 1. 复制真实库到 <工作目录>/lib-m6（数据库用 .backup，预览用 APFS 克隆），不改用户的库；
 #    副本升级到 M6 的表结构时，所有照片的 OCR、人物都是“待做”；
@@ -8,8 +8,8 @@
 # 场景会改本机设置里的“暂停了哪些分析”，前后都清掉。
 set -euo pipefail
 
-work=${1:?用法：Scripts/m6-analysis-test.sh <工作目录>}
-project_directory=${0:A:h:h}
+work=${1:?用法：Scripts/test/m6-analysis-test.sh <工作目录>}
+project_directory=${0:A:h:h:h}
 library="$HOME/Library/Application Support/PhotoAI-Mac-v2"
 
 cd "$project_directory"

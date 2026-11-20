@@ -1,11 +1,11 @@
 #!/bin/zsh
 # 检查器的直方图和导航器（PHOTOAI_SCENARIO=inspector）。不需要卡插着。
-# 用法：Scripts/inspector-test.sh <工作目录>
+# 用法：Scripts/test/inspector-test.sh <工作目录>
 # 复制真实库到 <工作目录>/lib-inspector（数据库用 .backup，预览用 APFS 克隆），截图放 <工作目录>/snap-inspector（系统截图，要有屏幕录制权限）。
 set -euo pipefail
 
-work=${1:?用法：Scripts/inspector-test.sh <工作目录>}
-project_directory=${0:A:h:h}
+work=${1:?用法：Scripts/test/inspector-test.sh <工作目录>}
+project_directory=${0:A:h:h:h}
 library="$HOME/Library/Application Support/PhotoAI-Mac-v2"
 
 cd "$project_directory"

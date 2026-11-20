@@ -1,7 +1,7 @@
 import AppKit
 import PhotoAICore
 
-/// `PHOTOAI_SCENARIO=viewing`：观看体验（计划 · M3 之后 V-1–V-4）。准备工作和 M3 一样（`Scripts/m3-test-volumes.sh`）：
+/// `PHOTOAI_SCENARIO=viewing`：观看体验（计划 · M3 之后 V-1–V-4）。准备工作和 M3 一样（`Scripts/test/m3-test-volumes.sh`）：
 /// 真实存储卡、测试映像 `PAICARDA`（卡 A）和 `PAIBACKUP`（备份盘 B）。
 ///
 /// - V-4：所有照片记录的尺寸比例和缩略图一致（旧库启动时校正过一次）；

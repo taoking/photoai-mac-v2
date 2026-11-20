@@ -136,6 +136,7 @@ private struct WindowSheets: ViewModifier {
             case .shortcuts: ShortcutsSheet()
             case .export(let range): ExportSheet(range: range)
             case .exportResult(let report): ExportResultSheet(report: report)
+            case .ratingImport(let fileName, let plan): RatingImportSheet(fileName: fileName, plan: plan)
             case .namePerson(let person): PersonNameSheet(person: person)
             }
         }

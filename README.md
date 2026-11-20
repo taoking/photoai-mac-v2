@@ -1,43 +1,53 @@
 # PhotoAI Mac v2
 
-PhotoAI Mac 的重写项目：只给自己用的本机选片工作台，同时是所有导入过照片的预览档案。
+只给自己用的本机选片工作台，同时是所有导入过照片的预览档案。
 
 - 记住每张照片在哪张卡、哪块盘上，在本机永久留一份预览；卡和盘拔掉、清空以后照样能浏览和选片。
-- 星级 + 自定义标签 + 收藏夹，选好后导出原文件去别处精修。
+- 星级 + 自定义标签 + Pick / Reject + 收藏夹，选好后导出原文件去别处精修。
+- 清卡前按文件核对副本，缺的补到备份盘；人物分组、照片里的文字、地点、日期都能搜。
+- 命令行 `photoai` 和 Claude skill：“把 1926 到 1950 打 5 星”。
 - 从不改动、移动、删除卡和外置盘上的文件。
 
-当前状态：第一个阶段版本 **0.6.0**（[Release](https://github.com/taoking/photoai-mac-v2/releases/tag/v0.6.0)）：原生应用（macOS 27，SwiftUI）包含卷与导入、选片、导出、清卡、命令行、后台分析与搜索（OCR、人物、地点）。之后的改动见 [迭代](docs/迭代.md)。v1 在另一个项目里，继续可用。
+当前版本 **1.0.0**（[Releases](https://github.com/taoking/photoai-mac-v2/releases)）。需要 **macOS 27.2 或更新**、Apple 芯片。v1 在另一个项目里，继续可用。
 
-## 从这里开始
+## 文档
 
-- [交接](交接.md)：现在在哪一步、下一步做什么、文档地图、最容易做错的规则。
-- [设计稿](docs/设计稿.md)：最终结论汇总，以它为准。
-- [计划](docs/计划.md)：M1–M6 的阶段、验收标准、性能目标、工作方式。
-- [迭代](docs/迭代.md)：0.6.0 之后的待办、迭代和版本。
-- [沟通记录](docs/沟通记录.md)：每轮讨论的问答。
+| 文档 | 内容 |
+| --- | --- |
+| [安装与部署](安装与部署.md) | 系统要求、安装、升级、人物识别模型、命令行和 skill、数据位置、备份、卸载、常见问题 |
+| [功能说明](功能说明.md) | 每项功能怎么用、快捷键总表、版本 |
+| [开发文档](docs/README.md) | 交接、设计、后续迭代、开发过程记录 |
 
-细节文档：[产品定位与目标](docs/产品定位与目标.md)、[信息架构与交互](docs/信息架构与交互.md)、[数据模型](docs/数据模型.md)。
+## 快速安装
 
-## 构建
+```sh
+git clone https://github.com/taoking/photoai-mac-v2.git && cd photoai-mac-v2
+Scripts/install.sh --cli          # 软件装到 /Applications，命令行和 skill 装到本机
+Scripts/install-face-model.sh     # 可选：人物识别要的模型（下载后在本机转换）
+```
+
+也可以在 [Releases](https://github.com/taoking/photoai-mac-v2/releases) 下载打包好的 `.app`，第一次打开前的步骤见[安装与部署](安装与部署.md#方式二下载-release)。
+
+## 目录
+
+```text
+安装与部署.md  功能说明.md     给使用者看的文档
+Sources/       PhotoAICore（数据、扫描、预览、导出、清卡、分析）、PhotoAIApp（SwiftUI 界面）、photoai（命令行）
+Tests/         自动测试（swift test）
+Resources/     Info.plist、应用图标
+Scripts/       构建、安装、打包发布、模型安装、图标；Scripts/test/ 是验收场景和性能测量脚本
+Skills/        Claude skill（photoai）
+docs/          开发文档：交接、设计、迭代、过程记录，已冻结的网页原型
+```
+
+## 开发
 
 需要 Xcode 27（Swift 6.4）。
 
 ```sh
-swift test                                # 自动测试
-Scripts/build-app.sh && open .build/PhotoAI-v2.app
-swift run photoai exif <照片>…             # 查看身份相关的 EXIF 字段
-Scripts/install-face-model.sh             # 人物识别要的模型：下载 InsightFace 的 ArcFace 并在本机转成 Core ML
-Scripts/release.sh 0.6.0                  # 打包阶段版本（加 --publish 发 GitHub Release）
-Scripts/make-icon.sh                      # 重新生成应用图标
+swift test                                          # 自动测试
+Scripts/build-app.sh && open .build/PhotoAI-v2.app  # 构建（不安装）
+Scripts/release.sh 1.0.0                            # 打包 zip；加 --publish 发 GitHub Release
 ```
 
-人脸识别模型（InsightFace ArcFace R50）的协议只允许非商业用途，不放进仓库，由上面的脚本下载到本机。
-
-## 原型（已停止维护）
-
-M6 之前的交互参考，0.6.0 起以原生应用为准，不再更新。
-
-```sh
-open prototype/index.html      # 浏览器直接打开，不联网，数据只在内存里
-prototype/tests/run.sh         # 无界面 Chrome 走一遍典型场景（需要 Google Chrome）
-```
+接手开发先读 [交接](docs/交接.md)。人脸识别模型（InsightFace ArcFace R50）的协议只允许非商业用途，不放进仓库，由脚本下载到本机。

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 扫描用到的写入。规则见 docs/数据模型.md §5、§6：
+/// 扫描用到的写入。规则见 docs/设计/数据模型.md §5、§6：
 /// 每次位置在现存和历史之间变化，都在同一个事务里同步照片的 `present_location_count`。
 extension Library {
     struct ScanFile: Sendable {

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # 检查器（直方图、导航器）对流畅度的影响：PF-2、PF-6、PF-7。不需要卡插着，只用真实库的副本。
-# 用法：Scripts/inspector-pf.sh <工作目录>
+# 用法：Scripts/test/inspector-pf.sh <工作目录>
 #
 # 后台分析关着（只看检查器本身），检查器开着（默认），三项：
 # - PF-2：网格每 1/60 秒向下滚 150 点，600 帧；
@@ -9,8 +9,8 @@
 # PHOTOAI_PF_EXTRA 加额外的环境变量，例如 PHOTOAI_PF_EXTRA="PHOTOAI_FOCUS=off" 不在后台读对焦框。
 set -uo pipefail
 
-work=${1:?用法：Scripts/inspector-pf.sh <工作目录>}
-project_directory=${0:A:h:h}
+work=${1:?用法：Scripts/test/inspector-pf.sh <工作目录>}
+project_directory=${0:A:h:h:h}
 library="$HOME/Library/Application Support/PhotoAI-Mac-v2"
 app=$project_directory/.build/PhotoAI-v2.app/Contents/MacOS/PhotoAIApp
 
