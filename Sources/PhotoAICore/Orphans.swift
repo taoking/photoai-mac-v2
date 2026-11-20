@@ -100,7 +100,14 @@ extension Library {
                 result.kept += chunk.filter { !deletable.contains($0) }
                 guard !deletable.isEmpty else { continue }
                 let ids = chunk.filter(deletable.contains)
-                try db.run("DELETE FROM photos WHERE id IN (\(ids.map(String.init).joined(separator: ",")));")
+                let idList = ids.map(String.init).joined(separator: ",")
+                // 脸随照片删掉（外键级联），人物的特征和要重算；OCR 全文索引没有外键，单独删。
+                let people = Set(try db.all(
+                    "SELECT DISTINCT person_id FROM faces WHERE photo_id IN (\(idList)) AND person_id IS NOT NULL;"
+                ) { $0.int64(0) })
+                try db.run("DELETE FROM ocr_text WHERE rowid IN (\(idList));")
+                try db.run("DELETE FROM photos WHERE id IN (\(idList));")
+                try refreshPersonSums(people)
                 result.deleted += ids
             }
             result.removedVolumes = try db.all(
