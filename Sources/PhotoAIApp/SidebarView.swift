@@ -1,7 +1,7 @@
 import PhotoAICore
 import SwiftUI
 
-/// 侧栏：图库、时间、卷、收藏夹（信息架构 §3.1）。人物、地点在后面的阶段加。
+/// 侧栏：图库、时间、卷、收藏夹、人物、地点（信息架构 §3.1）。地点只在打开地点功能后出现。
 /// 已移除的卷和无卷关联照片不出现在侧栏。
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
@@ -97,6 +97,30 @@ struct SidebarView: View {
                     Button { model.beginNewCollection(adding: []) } label: { Image(systemName: "plus") }
                         .buttonStyle(.borderless)
                         .help("新建收藏夹")
+                }
+            }
+
+            Section("人物") {
+                Label("全部人物", systemImage: "person.2").tag(SidebarItem.people)
+                // 起了名字的人直接列在这里；未命名的在人物网格里。
+                ForEach(model.people.filter { $0.name != nil }) { person in
+                    CountRow(title: person.displayName, count: person.photoCount)
+                        .tag(SidebarItem.person(person.id))
+                        .contextMenu {
+                            Button("改名…") { model.activeSheet = .namePerson(person) }
+                            Button("隐藏这个人物") { model.setPersonHidden(person.id, true) }
+                        }
+                }
+            }
+
+            if model.placesEnabled {
+                Section("地点") {
+                    if model.places.isEmpty {
+                        Text(model.placesRunning ? "正在查地名…" : "没有带坐标的照片").foregroundStyle(.secondary)
+                    }
+                    ForEach(model.places, id: \.name) { place in
+                        CountRow(title: place.name, count: place.photoCount).tag(SidebarItem.place(place.name))
+                    }
                 }
             }
         }

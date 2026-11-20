@@ -144,6 +144,50 @@ enum Schema {
         """
         CREATE INDEX photos_number ON photos(file_number);
         CREATE INDEX photos_base_name ON photos(base_name COLLATE NOCASE);
+        """,
+        // 5：M6 后台分析。照片表里早就有 ocr_state、face_state（默认 pending）、geo_cell。
+        """
+        CREATE TABLE people (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            is_hidden INTEGER NOT NULL DEFAULT 0,
+            -- 归在这个人物下、有特征的脸的特征之和与张数：归新脸时和它的平均方向比，不用每次读全部特征。
+            feature_sum BLOB,
+            face_count INTEGER NOT NULL DEFAULT 0,
+            created_at REAL NOT NULL
+        );
+        CREATE INDEX people_name ON people(name) WHERE name IS NOT NULL;
+        CREATE TABLE faces (
+            id INTEGER PRIMARY KEY,
+            photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+            person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+            -- 在 1600 预览里的位置，0–1，左上为原点。
+            x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL,
+            quality REAL NOT NULL,
+            -- 512 个 float32，L2 归一化；太小、太糊的脸没有特征，只记位置。
+            feature BLOB,
+            -- 用户说过“不是 TA”的人物：这张脸不再自动归进去。
+            rejected_person_id INTEGER
+        );
+        CREATE INDEX faces_photo ON faces(photo_id);
+        CREATE INDEX faces_person ON faces(person_id);
+        -- 等待归属的脸（有特征、没人物）。
+        CREATE INDEX faces_unassigned ON faces(id) WHERE person_id IS NULL AND feature IS NOT NULL;
+        CREATE INDEX photos_ocr_state ON photos(ocr_state) WHERE ocr_state = 'pending';
+        CREATE INDEX photos_face_state ON photos(face_state) WHERE face_state = 'pending';
+
+        -- OCR 文字，rowid 就是照片 id。trigram 分词：中文没有空格，按三个字一组建索引，任意一段文字都能搜到。
+        CREATE VIRTUAL TABLE ocr_text USING fts5(text, tokenize = 'trigram');
+
+        -- 地名缓存：一个约 1 公里的网格一行（坐标取两位小数）。
+        CREATE TABLE places (
+            geo_cell TEXT PRIMARY KEY,
+            name TEXT,
+            detail TEXT,
+            state TEXT NOT NULL CHECK (state IN ('found', 'none', 'failed')),
+            fetched_at REAL NOT NULL
+        ) WITHOUT ROWID;
+        CREATE INDEX photos_geo_cell ON photos(geo_cell) WHERE geo_cell IS NOT NULL;
         """
     ]
 

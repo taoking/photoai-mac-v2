@@ -116,6 +116,12 @@ public enum PhotoScope: Sendable, Hashable {
     case undated
     case importBatch(Int)
     case collection(CollectionID)
+    /// 有这个人物的照片（M6）。
+    case person(PersonID)
+    /// 地名（城市）是这个的照片。
+    case place(String)
+    /// 全局搜索的结果。
+    case search(SearchQuery)
 }
 
 public enum PhotoSort: Sendable, Hashable {

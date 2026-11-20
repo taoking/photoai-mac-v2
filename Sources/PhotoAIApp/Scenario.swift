@@ -13,6 +13,7 @@ import PhotoAICore
 /// - `PHOTOAI_SCENARIO=viewing`：观看体验（背景、任意缩放、单张换原图、照片尺寸），见 `Scenario+Viewing.swift`。
 /// - `PHOTOAI_SCENARIO=clearcard`：M4 清卡与无卷关联照片，见 `Scenario+ClearCard.swift`。
 /// - `PHOTOAI_SCENARIO=cli`：M5 命令行和软件一起用，见 `Scenario+CLI.swift`。
+/// - `PHOTOAI_SCENARIO=analysis`：M6 后台分析与搜索，见 `Scenario+Analysis.swift`。
 ///
 /// 只用于临时的库（`PHOTOAI_LIBRARY_DIR`），会改动库里的星级、标签和收藏夹。
 /// 每一步都走 `perform(_:)`，和按键走的是同一条路。
@@ -45,6 +46,7 @@ final class ScenarioRunner {
         case "viewing": buildViewing()
         case "clearcard": buildClearCard()
         case "cli": buildCLI()
+        case "analysis": buildAnalysis()
         default:
             print("FAIL 未知的场景 \(mode)")
             exit(2)
@@ -471,6 +473,8 @@ final class ScenarioRunner {
             }
             return
         }
+        // 真按键会经过事件监视、记下“用户在操作”，这里直接调命令，手动记一次（后台分析据此让路）。
+        model.interaction.touch()
         model.perform(.rate(remaining % 5 + 1))
         DispatchQueue.main.asyncAfter(deadline: .now() + cullInterval) { [weak self] in
             self?.rateNext(remaining: remaining - 1, startIndex: startIndex, done: done)

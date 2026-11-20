@@ -54,6 +54,11 @@ public struct Row {
         return String(cString: pointer)
     }
 
+    public func blob(_ index: Int32) -> Data? {
+        guard let pointer = sqlite3_column_blob(statement, index) else { return nil }
+        return Data(bytes: pointer, count: Int(sqlite3_column_bytes(statement, index)))
+    }
+
     public func date(_ index: Int32) -> Date? {
         isNull(index) ? nil : Date(timeIntervalSince1970: double(index))
     }

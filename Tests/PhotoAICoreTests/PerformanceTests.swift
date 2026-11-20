@@ -49,6 +49,21 @@ struct PerformanceTests {
         _ = try measure("照片所在卷（离线标记）") { try reader.photoVolumes().count }
     }
 
+    /// M6 搜索：认条件加查询，和切换侧栏项一样按 PF-3 的 ≤ 200 ms 要求；后台分析的进度、搜索词表、人物网格也测一下。
+    @Test func searchQueries() throws {
+        let reader = try Library(paths: sourcePaths).makeReader()
+        let vocabulary = try reader.searchVocabulary()
+        for text in ["2025-08", "8月12日", "DSC0100", "1926-1950", "A7R5", "门票", "2025-08 DSC0", "\"出口 B\""] {
+            let (median, _) = try measure("搜索 \(text)") {
+                try reader.photos(in: .search(SearchParser.parse(text, vocabulary: vocabulary))).count
+            }
+            #expect(median <= 200)
+        }
+        _ = try measure("搜索词表") { try reader.searchVocabulary().cameras.count }
+        _ = try measure("分析进度（OCR）") { try reader.analysisCounts(.ocr).total }
+        _ = try measure("人物网格") { try reader.people().count }
+    }
+
     /// PF-3（收藏夹）：切换到收藏夹的查询，≤ 200 ms。
     @Test func collectionQueries() throws {
         let reader = try Library(paths: sourcePaths).makeReader()

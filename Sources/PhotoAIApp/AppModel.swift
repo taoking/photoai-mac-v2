@@ -14,6 +14,11 @@ enum SidebarItem: Hashable {
     case undated
     case volume(VolumeID)
     case collection(CollectionID)
+    /// 人物网格（不是照片）。
+    case people
+    case person(PersonID)
+    case place(String)
+    case search(SearchQuery)
 
     var scope: PhotoScope {
         switch self {
@@ -23,7 +28,18 @@ enum SidebarItem: Hashable {
         case .undated: .undated
         case .volume(let id): .volume(id)
         case .collection(let id): .collection(id)
+        // 人物网格不列照片：空的搜索一张都不匹配。
+        case .people: .search(SearchQuery(input: "", terms: []))
+        case .person(let id): .person(id)
+        case .place(let name): .place(name)
+        case .search(let query): .search(query)
         }
+    }
+
+    /// 筛选条件按这个记：所有搜索共用一份（删掉一个搜索条件时筛选条件不丢）。
+    var filterKey: SidebarItem {
+        if case .search = self { return .search(SearchQuery(input: "", terms: [])) }
+        return self
     }
 }
 
@@ -39,9 +55,11 @@ enum ActiveSheet: Identifiable, Equatable {
     case shortcuts
     case export(ExportRange)
     case exportResult(ExportReport)
+    case namePerson(PersonSummary)
 
     var id: String {
         switch self {
+        case .namePerson(let person): "person-\(person.id)"
         case .export: "export"
         case .exportResult: "export-result"
         case .addToCollection: "add"
@@ -210,6 +228,39 @@ final class AppModel {
     var volumeToAdd: PendingVolume?
     var errorMessage: String?
 
+    // 后台分析与搜索（M6）
+    /// 各种分析在可见照片上的进度；地点单独算（只算有坐标的照片）。
+    var analysisCounts: [AnalysisKind: AnalysisCounts] = [:]
+    var placeCounts = AnalysisCounts()
+    var analysisRunning: Set<AnalysisKind> = []
+    var placesRunning = false
+    /// 用户暂停的分析，记在本机设置里，重启后仍然暂停。
+    var analysisPaused: Set<AnalysisKind> = AnalysisSettings.paused {
+        didSet { AnalysisSettings.paused = analysisPaused }
+    }
+    /// 识别地点（联网，把坐标发给 Apple），默认关闭。
+    var placesEnabled = AnalysisSettings.placesEnabled {
+        didSet { AnalysisSettings.placesEnabled = placesEnabled }
+    }
+    /// 人脸识别模型没装：人物分析不跑，人物页说明怎么装。
+    var faceModelMissing = false
+    var people: [PersonSummary] = []
+    var places: [PlaceSummary] = []
+    var searchText = ""
+    /// 加一表示要把焦点放到搜索框（⌘F）。
+    var searchFocusRequest = 0
+    var showTaskPanel = false
+    @ObservationIgnored var vocabulary = SearchVocabulary()
+    @ObservationIgnored var analysisStops: [AnalysisKind: ScanCancellation] = [:]
+    @ObservationIgnored var placeStop: ScanCancellation?
+    @ObservationIgnored let interaction = InteractionClock()
+    @ObservationIgnored var interactionMonitor: Any?
+    @ObservationIgnored var lastAnalysisReload = Date.distantPast
+    /// 上一轮什么都没做成（预览都读不了）时的待做张数：张数没变就不再自动开始，免得原地打转。
+    @ObservationIgnored var analysisStalled: [AnalysisKind: Int] = [:]
+    /// 这次启动后查过地名没有：第一次连失败过的也重试，之后只查新的网格。
+    @ObservationIgnored var placesTried = false
+
     // 后台任务
     private(set) var scanStatus: String?
     private(set) var previewStatus: String?
@@ -225,7 +276,7 @@ final class AppModel {
     private var lastScanReload = Date.distantPast
     private var ignoredVolumeUUIDs: Set<String> = []
     private var watcher: VolumeWatcher?
-    private var dataVersion: Int?
+    var dataVersion: Int?
 
     let launchStart: Date
     private var reportedLaunch = false
@@ -275,8 +326,10 @@ final class AppModel {
                 }
                 for (id, _) in onlineVolumes { enqueueScan(id) }
                 startPreviews()
+                startAnalysis()
             }
         }
+        watchInteraction()
     }
 
     /// 窗口重新获得焦点：别的进程（命令行）改过库才重读。
@@ -353,6 +406,7 @@ final class AppModel {
                     if Measurements.isEnabled {
                         Measurements.emit("侧栏：卷 \(volumes.count) 个，日期 \(days.count) 天，导入批次 \(batches.count) 个")
                     }
+                    reloadAnalysisData()
                 }
             } catch {
                 await MainActor.run { [weak self] in self?.errorMessage = "读取侧栏失败：\(error)" }
@@ -384,8 +438,9 @@ final class AppModel {
         Measurements.recordLaunch(since: launchStart, count: photoCount)
         if ProcessInfo.processInfo.environment["PHOTOAI_SWITCH_TEST"] == "1" { runSwitchTest() }
         if let scenario = ProcessInfo.processInfo.environment["PHOTOAI_SCENARIO"] {
-            // 等侧栏数据和启动时的自动重扫都到了再开始。
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            // 等侧栏数据和启动时的自动重扫都到了再开始；PF-12 要等后台分析开始（`PHOTOAI_SCENARIO_DELAY` 秒）。
+            let delay = Double(ProcessInfo.processInfo.environment["PHOTOAI_SCENARIO_DELAY"] ?? "") ?? 1.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self else { return }
                 scenarioRunner = ScenarioRunner(model: self, mode: scenario)
                 scenarioRunner?.start()
@@ -615,6 +670,8 @@ final class AppModel {
         if Date().timeIntervalSince(lastPreviewReload) > 2 {
             lastPreviewReload = Date()
             reloadPhotos(reason: .scan)
+            // 预览好一批就可以分析一批。
+            startAnalysis()
         }
     }
 
@@ -638,6 +695,7 @@ final class AppModel {
         }
         reloadPhotos(reason: .scan)
         reloadSidebar()
+        startAnalysis()
         if !previewsPaused, Set(onlineVolumes.keys) != Set(previewMounts.keys) {
             startPreviews()
         }

@@ -6,6 +6,7 @@ import SwiftUI
 /// 内容区的网格、单张、比较在同一块区域里切换；网格一直留在下面，切回来时滚动位置和选择都在。
 struct MainWindow: View {
     @Environment(AppModel.self) private var model
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         @Bindable var model = model
@@ -17,6 +18,36 @@ struct MainWindow: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
         } detail: {
             VStack(spacing: 0) {
+                if model.selection == .people {
+                    PeopleView()
+                } else {
+                    photoContent
+                }
+                StatusBar()
+            }
+            .inspector(isPresented: Binding(
+                get: { model.showInspector && !model.focusMode },
+                set: { if !model.focusMode { model.showInspector = $0 } }
+            )) {
+                InspectorView()
+                    .inspectorColumnWidth(min: 220, ideal: 260, max: 340)
+            }
+        }
+        .searchable(text: $model.searchText, placement: .toolbar, prompt: "文件名、日期、人名、文字…")
+        .searchFocused($searchFocused)
+        .onSubmit(of: .search) {
+            model.submitSearch()
+            searchFocused = false
+        }
+        .onChange(of: model.searchFocusRequest) { searchFocused = true }
+        .toolbar(model.focusMode ? .hidden : .visible, for: .windowToolbar)
+        .toolbar { toolbarItems }
+        .sheet(isPresented: $model.showTaskPanel) { TaskPanel() }
+        .modifier(WindowSheets())
+    }
+
+    @ViewBuilder
+    private var photoContent: some View {
                 if model.viewMode == .grid {
                     TitleRow()
                     Divider()
@@ -39,18 +70,11 @@ struct MainWindow: View {
                     case .compare: CompareView()
                     }
                 }
-                StatusBar()
-            }
-            .inspector(isPresented: Binding(
-                get: { model.showInspector && !model.focusMode },
-                set: { if !model.focusMode { model.showInspector = $0 } }
-            )) {
-                InspectorView()
-                    .inspectorColumnWidth(min: 220, ideal: 260, max: 340)
-            }
-        }
-        .toolbar(model.focusMode ? .hidden : .visible, for: .windowToolbar)
-        .toolbar {
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarItems: some ToolbarContent {
+        @Bindable var model = model
             ToolbarItem {
                 Button { model.perform(.toggleFilterBar) } label: {
                     let count = model.currentFilter.activeGroupCount
@@ -86,7 +110,20 @@ struct MainWindow: View {
             ToolbarItem {
                 Button { model.showInspector.toggle() } label: { Label("检查器", systemImage: "info.circle") }
             }
-        }
+    }
+
+    private var grid: some View {
+        PhotoGridHost()
+    }
+}
+
+/// 主窗口上的各种面板、提示框和横幅。
+private struct WindowSheets: ViewModifier {
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        @Bindable var model = model
+        content
         .sheet(item: $model.volumeToAdd) { pending in
             AddVolumeSheet(pending: pending)
         }
@@ -99,6 +136,7 @@ struct MainWindow: View {
             case .shortcuts: ShortcutsSheet()
             case .export(let range): ExportSheet(range: range)
             case .exportResult(let report): ExportResultSheet(report: report)
+            case .namePerson(let person): PersonNameSheet(person: person)
             }
         }
         .sheet(item: $model.clearCard) { session in
@@ -114,8 +152,13 @@ struct MainWindow: View {
         .overlay(alignment: .top) { NewVolumeBanner() }
         .overlay(alignment: .bottom) { ToastView() }
     }
+}
 
-    private var grid: some View {
+/// 照片网格（NSCollectionView），模型里的数据接到网格上。
+private struct PhotoGridHost: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
         PhotoGrid(
             sections: model.sections,
             sectionsVersion: model.sectionsVersion,
@@ -148,6 +191,12 @@ struct TitleRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(model.sourceTitle).font(.headline).lineLimit(1)
+            if case .search(let query) = model.selection {
+                SearchChips(query: query)
+            }
+            if case .person(let id) = model.selection, let person = model.people.first(where: { $0.id == id }) {
+                PersonTitleButtons(person: person)
+            }
             if case .volume(let id) = model.selection {
                 let online = model.onlineVolumes[id] != nil
                 Label(online ? "在线" : "离线", systemImage: online ? "circle.fill" : "circle")
@@ -233,8 +282,79 @@ struct MoreMenu: View {
                     .fixedSize()
                     .modifier(DeleteCollectionConfirmation(collection: $confirmingDelete))
             }
+        case .person(let id):
+            if let person = model.people.first(where: { $0.id == id }) {
+                Menu {
+                    Button(person.name == nil ? "命名…" : "改名…") { model.activeSheet = .namePerson(person) }
+                    Button("不是 TA（所选照片）") { model.removeSelectionFromPerson() }
+                        .disabled(model.selectedPhotoIDs.isEmpty)
+                    Divider()
+                    Button("隐藏这个人物") { model.setPersonHidden(id, true) }
+                } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+            }
         default:
             EmptyView()
+        }
+    }
+}
+
+/// 人物页标题行：命名、“不是 TA”。
+struct PersonTitleButtons: View {
+    @Environment(AppModel.self) private var model
+    let person: PersonSummary
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(person.name == nil ? "命名…" : "改名…") { model.activeSheet = .namePerson(person) }
+            if !model.selectedPhotoIDs.isEmpty {
+                Button("不是 TA（\(model.selectedPhotoIDs.count) 张）") { model.removeSelectionFromPerson() }
+                    .help("把所选照片从这个人物里拿出来，以后不再自动归给 TA")
+            }
+        }
+        .controlSize(.small)
+    }
+}
+
+/// 检查器的“识别”：人物、地点、OCR 文字。分析完才有。
+struct RecognitionSection: View {
+    @Environment(AppModel.self) private var model
+    let photoID: PhotoID
+    @State private var loaded: (id: PhotoID, recognition: PhotoRecognition)?
+
+    var body: some View {
+        Group {
+            if let recognition = loaded?.id == photoID ? loaded?.recognition : nil,
+               !recognition.faces.isEmpty || recognition.place != nil || !(recognition.text ?? "").isEmpty {
+                Section("识别") {
+                    let named = recognition.faces.compactMap { face in face.personID.map { ($0, face.personName) } }
+                    if !named.isEmpty {
+                        LabeledContent("人物") {
+                            HStack(spacing: 6) {
+                                ForEach(Array(named.enumerated()), id: \.offset) { _, entry in
+                                    Button(entry.1 ?? "未命名") { model.selection = .person(entry.0) }
+                                        .buttonStyle(.link)
+                                }
+                            }
+                        }
+                    } else if !recognition.faces.isEmpty {
+                        LabeledContent("人物", value: "\(recognition.faces.count) 张脸，太小或太糊，不认人")
+                    }
+                    if let place = recognition.place {
+                        LabeledContent("地点") { Text(place.name).help(place.detail) }
+                    }
+                    if let text = recognition.text, !text.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("文字").foregroundStyle(.secondary)
+                            Text(text).font(.caption).textSelection(.enabled).lineLimit(8)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: "\(photoID)-\(model.detailVersion)-\(model.people.count)") {
+            if let recognition = await model.loadRecognition(of: photoID) { loaded = (photoID, recognition) }
         }
     }
 }
@@ -282,7 +402,10 @@ struct EmptyLibraryView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if model.volumes.isEmpty {
+        if case .search = model.selection {
+            ContentUnavailableView("没有找到", systemImage: "magnifyingglass",
+                                   description: Text("隐藏的照片（所在的卷都已移除）不会被搜到。删掉一个条件试试。"))
+        } else if model.volumes.isEmpty {
             ContentUnavailableView(
                 "还没有照片",
                 systemImage: "sdcard",
@@ -299,7 +422,9 @@ struct StatusBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if model.scanStatus != nil || model.previewStatus != nil || model.exportStatus != nil || model.autoAdvance {
+        let analysis = AnalysisKind.allCases.compactMap { kind in model.analysisStatus(kind).map { (kind, $0) } }
+        if model.scanStatus != nil || model.previewStatus != nil || model.exportStatus != nil || model.autoAdvance
+            || !analysis.isEmpty || model.placeStatus != nil {
             VStack(spacing: 0) {
                 Divider()
                 HStack(spacing: 16) {
@@ -310,6 +435,17 @@ struct StatusBar: View {
                         Label(preview, systemImage: "photo.stack")
                         Button(model.previewsPaused ? "继续" : "暂停") { model.togglePreviewPause() }
                             .buttonStyle(.link)
+                    }
+                    ForEach(analysis, id: \.0) { kind, status in
+                        Label(status, systemImage: kind == .ocr ? "text.viewfinder" : "person.crop.square")
+                        Button(model.analysisPaused.contains(kind) ? "继续" : "暂停") { model.toggleAnalysisPause(kind) }
+                            .buttonStyle(.link)
+                    }
+                    if let places = model.placeStatus {
+                        Label(places, systemImage: "mappin.and.ellipse")
+                    }
+                    if !analysis.isEmpty || model.placeStatus != nil {
+                        Button("详情") { model.showTaskPanel = true }.buttonStyle(.link)
                     }
                     if let export = model.exportStatus {
                         Label(export, systemImage: "square.and.arrow.up")
@@ -486,6 +622,7 @@ struct InspectorView: View {
                         LabeledContent("尺寸", value: "\(width) × \(height)")
                     }
                 }
+                RecognitionSection(photoID: id)
                 Section("现在在") {
                     ForEach(Array(detail.locations.enumerated()), id: \.offset) { _, location in
                         let online = model.onlineVolumes[location.volumeID] != nil

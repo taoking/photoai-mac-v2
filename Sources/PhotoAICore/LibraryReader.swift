@@ -400,6 +400,12 @@ public struct LibraryReader: Sendable {
             return ("p.import_batch_id = ?", [id])
         case .collection(let id):
             return ("p.id IN (SELECT photo_id FROM collection_members WHERE collection_id = ?)", [id])
+        case .person(let id):
+            return condition(for: .person(id, name: ""))
+        case .place(let name):
+            return ("p.geo_cell IN (SELECT geo_cell FROM places WHERE state = 'found' AND name = ?)", [name])
+        case .search(let query):
+            return condition(for: query)
         }
     }
 }

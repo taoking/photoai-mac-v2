@@ -148,7 +148,9 @@ struct PhotoGrid: NSViewRepresentable {
             // 等这一轮画完再报。
             DispatchQueue.main.async { [parent] in parent?.onFirstScreenShown?() }
             if ProcessInfo.processInfo.environment["PHOTOAI_SCROLL_TEST"] == "1" {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.runScrollTest() }
+                // PF-12 要等后台分析开始再滚：`PHOTOAI_SCROLL_DELAY` 秒。
+                let delay = Double(ProcessInfo.processInfo.environment["PHOTOAI_SCROLL_DELAY"] ?? "") ?? 0.3
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.runScrollTest() }
             }
         }
 
