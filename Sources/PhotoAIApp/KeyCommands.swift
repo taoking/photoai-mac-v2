@@ -17,6 +17,7 @@ enum PhotoCommand: Hashable {
     case addToLastCollection, addToCollection, removeFromCollection
     case selectAll, undo, redo
     case export
+    case focusSearch
     case showShortcuts
 
     struct Shortcut {
@@ -62,6 +63,7 @@ enum PhotoCommand: Hashable {
         case .undo: Shortcut(key: "z", modifiers: .command, display: "⌘Z")
         case .redo: Shortcut(key: "z", modifiers: [.command, .shift], display: "⇧⌘Z")
         case .export: Shortcut(key: "e", modifiers: .command, display: "⌘E")
+        case .focusSearch: Shortcut(key: "f", modifiers: .command, display: "⌘F")
         case .showShortcuts: Shortcut(key: "?", display: "?")
         }
     }
@@ -100,6 +102,7 @@ enum PhotoCommand: Hashable {
         case .undo: "撤销"
         case .redo: "重做"
         case .export: "导出…"
+        case .focusSearch: "搜索…"
         case .showShortcuts: "快捷键…"
         }
     }
@@ -113,7 +116,7 @@ enum PhotoCommand: Hashable {
         ("标签", (0..<4).map { .toggleLabel(slot: $0, viaOption: false) } + (0..<9).map { .toggleLabel(slot: $0, viaOption: true) }
             + [.clearLabels]),
         ("收藏夹", [.addToLastCollection, .addToCollection, .removeFromCollection]),
-        ("其他", [.selectAll, .undo, .redo, .export, .showShortcuts])
+        ("其他", [.selectAll, .undo, .redo, .export, .focusSearch, .showShortcuts])
     ]
 
     static let all: [PhotoCommand] = reference.flatMap(\.1)
@@ -226,11 +229,17 @@ struct PhotoCommands: Commands {
         }
         CommandMenu("图库") {
             item(.export)
+            item(.focusSearch)
             Divider()
             Button("新建收藏夹…") { model.beginNewCollection(adding: []) }
             Button("标签设置…") { model.activeSheet = .labelSettings }
             Divider()
             OpenOrphansButton()
+            Divider()
+            Button("后台任务…") { model.showTaskPanel = true }
+            Toggle("识别地点（联网，把坐标发给 Apple）", isOn: Binding(
+                get: { model.placesEnabled }, set: { model.setPlacesEnabled($0) }
+            ))
         }
         CommandMenu("照片") {
             Menu("星级") { ForEach([1, 2, 3, 4, 5, 0], id: \.self) { item(.rate($0)) } }

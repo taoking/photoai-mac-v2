@@ -12,10 +12,10 @@ struct Toast: Equatable, Identifiable {
 extension AppModel {
     /// 当前侧栏项的筛选条件。改条件立刻重新筛（PF-8）。
     var currentFilter: PhotoFilter {
-        get { filters[selection] ?? PhotoFilter() }
+        get { filters[selection.filterKey] ?? PhotoFilter() }
         set {
             guard newValue != currentFilter else { return }
-            filters[selection] = newValue
+            filters[selection.filterKey] = newValue
             let started = Date()
             refilter()
             DispatchQueue.main.async { [resultCount = resultIDs.count] in
@@ -156,6 +156,7 @@ extension AppModel {
         case .undo: undo()
         case .redo: redo()
         case .showShortcuts: activeSheet = .shortcuts
+        case .focusSearch: searchFocusRequest += 1
         }
     }
 
@@ -563,6 +564,10 @@ extension AppModel {
         case .undated: "日期未知"
         case .volume(let id): volumes.first { $0.id == id }?.name ?? "卷"
         case .collection(let id): collections.first { $0.id == id }?.name ?? "收藏夹"
+        case .people: "人物"
+        case .person(let id): people.first { $0.id == id }?.displayName ?? "人物"
+        case .place(let name): name
+        case .search: "搜索结果"
         }
     }
 }
