@@ -56,6 +56,7 @@ enum ActiveSheet: Identifiable, Equatable {
     case export(ExportRange)
     case exportResult(ExportReport)
     case namePerson(PersonSummary)
+    case ratingImport(fileName: String, RatingImportPlan)
 
     var id: String {
         switch self {
@@ -67,6 +68,7 @@ enum ActiveSheet: Identifiable, Equatable {
         case .renameCollection(let id): "rename-\(id)"
         case .labelSettings: "labels"
         case .shortcuts: "shortcuts"
+        case .ratingImport: "rating-import"
         }
     }
 }

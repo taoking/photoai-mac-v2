@@ -236,6 +236,8 @@ struct PhotoCommands: Commands {
             item(.export)
             item(.focusSearch)
             Divider()
+            Button("从文件导入星级…") { model.chooseRatingFile() }
+            Divider()
             Button("新建收藏夹…") { model.beginNewCollection(adding: []) }
             Button("标签设置…") { model.activeSheet = .labelSettings }
             Divider()
