@@ -33,7 +33,9 @@ Scripts/make-icon.sh                      # 重新生成应用图标
 
 人脸识别模型（InsightFace ArcFace R50）的协议只允许非商业用途，不放进仓库，由上面的脚本下载到本机。
 
-## 原型
+## 原型（已停止维护）
+
+M6 之前的交互参考，0.6.0 起以原生应用为准，不再更新。
 
 ```sh
 open prototype/index.html      # 浏览器直接打开，不联网，数据只在内存里

@@ -203,6 +203,7 @@ struct PreviewImage: View {
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
+                    .overlay { FocusBoxOverlay(id: id) }
                     .viewerFrame(model.viewerStyle)
             } else if model.photo(id)?.thumbState == .ready {
                 ProgressView().controlSize(.small)

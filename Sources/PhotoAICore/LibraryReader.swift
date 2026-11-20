@@ -171,7 +171,8 @@ public struct LibraryReader: Sendable {
             """
             SELECT p.id, p.base_name, p.capture_date, p.width, p.height, p.rating, p.flag, p.thumb_state,
                    p.camera_make, p.camera_model, p.lens, p.focal_length, p.aperture, p.shutter, p.iso,
-                   p.preview_state, p.present_location_count
+                   p.preview_state, p.present_location_count,
+                   p.focus_state, p.focus_x, p.focus_y, p.focus_w, p.focus_h
             FROM photos p WHERE p.id = ?;
             """,
             [id],
@@ -199,7 +200,10 @@ public struct LibraryReader: Sendable {
                     previewState: PreviewState(rawValue: row.text(15) ?? "") ?? .pending,
                     presentLocationCount: row.int(16),
                     extensions: [],
-                    locations: []
+                    locations: [],
+                    focusState: row.text(17) ?? "pending",
+                    focus: row.text(17) == "found"
+                        ? FocusArea(x: row.double(18), y: row.double(19), width: row.double(20), height: row.double(21)) : nil
                 )
             }
         ) else { return nil }

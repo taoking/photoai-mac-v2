@@ -6,6 +6,7 @@
 # - PF-2：网格每 1/60 秒向下滚 150 点，600 帧；
 # - PF-6 / PF-7：单张视图连续打星、自动前进，每 40 ms 一次 1,000 次，和按人的节奏每 450 ms 一次 150 次。
 # 每次都重新复制库。改代码前后各跑一次比较。
+# PHOTOAI_PF_EXTRA 加额外的环境变量，例如 PHOTOAI_PF_EXTRA="PHOTOAI_FOCUS=off" 不在后台读对焦框。
 set -uo pipefail
 
 work=${1:?用法：Scripts/inspector-pf.sh <工作目录>}
@@ -23,7 +24,7 @@ fresh() {
     cp -cR "$library/Previews" "$work/lib-pf/Previews"
 }
 
-common=(PHOTOAI_LIBRARY_DIR=$work/lib-pf PHOTOAI_MEASURE=1 PHOTOAI_ANALYSIS=off)
+common=(PHOTOAI_LIBRARY_DIR=$work/lib-pf PHOTOAI_MEASURE=1 PHOTOAI_ANALYSIS=off ${=PHOTOAI_PF_EXTRA:-})
 fresh
 env $common PHOTOAI_SCROLL_TEST=1 PHOTOAI_SCROLL_DELAY=4 "$app" 2>&1 | grep -E "PF-2"
 fresh

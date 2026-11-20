@@ -88,7 +88,8 @@ enum Measurements {
             process.arguments = ["-x", "-o", "-l", "\(window.windowNumber)", url.path]
             if (try? process.run()) != nil {
                 process.waitUntilExit()
-                return
+                // 锁屏时系统截图截不到窗口，不出文件：退回下面的画法。
+                if FileManager.default.fileExists(atPath: url.path) { return }
             }
         }
         // 侧栏、检查器的毛玻璃材质画不进来，会是空白；只用来看内容区。

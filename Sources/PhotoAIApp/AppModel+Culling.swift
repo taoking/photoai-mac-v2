@@ -143,6 +143,8 @@ extension AppModel {
         case .zoomIn: zoomIn()
         case .zoomOut: zoomOut()
         case .zoomToFit: if zoomed { endZoom() }
+        case .toggleFocusPoint: toggleFocusPoint()
+        case .zoomToFocus: zoomToFocus()
         case .export: beginExport()
         case .addToLastCollection:
             if let id = lastCollectionID, collections.contains(where: { $0.id == id }) {

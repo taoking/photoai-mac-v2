@@ -75,6 +75,9 @@ public struct PhotoDetail: Sendable, Equatable {
     public var locations: [Location]
     /// 这张照片所在的收藏夹名字。
     public var collectionNames: [String] = []
+    /// 相机记录的对焦框：`pending` 还没读（原片在线时读），`none` 没有记录。
+    public var focusState: String = "pending"
+    public var focus: FocusArea?
 }
 
 /// 一个标签位置。一共 9 个，`sortOrder` 0–8 决定快捷键：前 4 个对应 6–9，全部对应 ⌥1–⌥9。

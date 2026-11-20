@@ -26,6 +26,16 @@ case "exif":
             print("  身份: 读不出元数据")
         }
     }
+case "focus":
+    // 每个文件一行：文件名、对焦框（转正后 0–1 的 x y 宽 高）或 none / unreadable。核对用。
+    for path in arguments.dropFirst() {
+        let url = URL(fileURLWithPath: path)
+        switch FocusPointReader.read(at: url) {
+        case .found(let area): print(String(format: "%@\t%.4f\t%.4f\t%.4f\t%.4f", url.lastPathComponent, area.x, area.y, area.width, area.height))
+        case .notRecorded: print("\(url.lastPathComponent)\tnone")
+        case nil: print("\(url.lastPathComponent)\tunreadable")
+        }
+    }
 case "dev-synth":
     // 开发用：在指定目录生成合成的十万条库，给性能目标测量用。不碰真实的库。
     guard arguments.count >= 2 else {
@@ -170,6 +180,7 @@ default:
       photoai rate <0-5> <匹配项>…        打星（0 是去掉星级）
       photoai collect <收藏夹> <匹配项>…  加入收藏夹，没有就新建
       photoai exif <文件>…                看文件的身份字段
+      photoai focus <文件>…               看相机记录的对焦框（目前认索尼）
     匹配项：文件名 DSC01926.ARW、去掉扩展名的文件名 DSC01926、编号 1926 或 01926、编号范围 1926-1950；
     可以写多项，用空格或逗号隔开。只匹配可见照片；一个编号命中多张时取拍摄时间最晚的一张。
     用 PHOTOAI_LIBRARY_DIR 换库。
