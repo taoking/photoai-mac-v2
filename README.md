@@ -6,7 +6,7 @@ PhotoAI Mac 的重写项目：只给自己用的本机选片工作台，同时�
 - 星级 + 自定义标签 + 收藏夹，选好后导出原文件去别处精修。
 - 从不改动、移动、删除卡和外置盘上的文件。
 
-当前状态：设计与可点击原型已确认；原生应用（macOS 27，SwiftUI）M1“卷与导入”代码完成，等真实卡验收。v1 在另一个项目里，继续可用。
+当前状态：设计与可点击原型已确认；原生应用（macOS 27，SwiftUI）M1–M5（卷与导入、选片、导出、清卡、命令行）已完成，M6 后台分析与搜索（OCR、人物、地点、全局搜索）等合并。v1 在另一个项目里，继续可用。
 
 ## 从这里开始
 
@@ -25,7 +25,10 @@ PhotoAI Mac 的重写项目：只给自己用的本机选片工作台，同时�
 swift test                                # 自动测试
 Scripts/build-app.sh && open .build/PhotoAI-v2.app
 swift run photoai exif <照片>…             # 查看身份相关的 EXIF 字段
+Scripts/install-face-model.sh             # 人物识别要的模型：下载 InsightFace 的 ArcFace 并在本机转成 Core ML
 ```
+
+人脸识别模型（InsightFace ArcFace R50）的协议只允许非商业用途，不放进仓库，由上面的脚本下载到本机。
 
 ## 原型
 
