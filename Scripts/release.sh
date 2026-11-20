@@ -20,7 +20,7 @@ output_directory=.build/release-zips
 mkdir -p "$output_directory"
 zip=$output_directory/PhotoAI-v2-$version.zip
 rm -f "$zip"
-ditto -c -k --keepParent "$app" "$zip"
+ditto -c -k --norsrc --noextattr --keepParent "$app" "$zip"
 digest=$(shasum -a 256 "$zip" | cut -d ' ' -f 1)
 echo "$zip"
 echo "SHA-256 $digest"
@@ -35,8 +35,10 @@ trap 'rm -f "$notes"' EXIT
 {
     grep -E "^\| $version \|" docs/迭代.md | cut -d '|' -f 4 | sed 's/^ *//; s/ *$//'
     echo
+    echo "需要 macOS 27.2 或更新（Apple 芯片）。安装、升级、命令行和人物识别模型见 [安装与部署](https://github.com/taoking/photoai-mac-v2/blob/main/安装与部署.md)，功能见 [功能说明](https://github.com/taoking/photoai-mac-v2/blob/main/功能说明.md)。"
+    echo
     echo "只给自己用：本机临时签名（没有 Developer ID、没有公证）。从网页下载后第一次打开会被系统拦下，"
-    echo "解压后运行 \`xattr -dr com.apple.quarantine PhotoAI-v2.app\` 再打开，或者直接用源码 \`Scripts/build-app.sh\` 构建。"
+    echo "解压后运行 \`xattr -dr com.apple.quarantine PhotoAI-v2.app\` 再打开，或者直接用源码 \`Scripts/install.sh\` 构建安装。"
     echo "人物识别要的模型不在包里，用源码里的 \`Scripts/install-face-model.sh\` 在本机下载转换。"
     echo
     echo "SHA-256：\`$digest\`"

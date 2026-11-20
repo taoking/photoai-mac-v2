@@ -1,6 +1,6 @@
 import Foundation
 
-/// 表结构与升级。见 docs/数据模型.md §3。
+/// 表结构与升级。见 docs/设计/数据模型.md §3。
 ///
 /// 用 `PRAGMA user_version` 记版本；每个版本一段 SQL，按顺序执行，已执行过的跳过。
 enum Schema {

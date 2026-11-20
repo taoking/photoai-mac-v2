@@ -1,7 +1,7 @@
 import AppKit
 import PhotoAICore
 
-/// `PHOTOAI_SCENARIO=cli`：命令行和软件一起用（计划 · M5）。准备工作见 `Scripts/m5-cli-test.sh`。
+/// `PHOTOAI_SCENARIO=cli`：命令行和软件一起用（计划 · M5）。准备工作见 `Scripts/test/m5-cli-test.sh`。
 ///
 /// - 软件关闭时：脚本先用命令行给 `PHOTOAI_CLI_CLOSED` 打 3 星、加入「命令行·关闭时」，再打开软件，这里核对星级和收藏夹；
 /// - 软件开着时：软件里先打一次星、标一次 Pick（有撤销记录），再跑命令行给 `PHOTOAI_CLI_OPEN` 打 4 星、加入「命令行·开着时」。

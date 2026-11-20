@@ -1,6 +1,6 @@
 #!/bin/zsh
 # M3 验收用：准备导出与放大场景（PHOTOAI_SCENARIO=export）要的库副本和两个测试磁盘映像。
-# 用法：Scripts/m3-test-volumes.sh <工作目录> [真实卡的挂载点，默认 /Volumes/Untitled]
+# 用法：Scripts/test/m3-test-volumes.sh <工作目录> [真实卡的挂载点，默认 /Volumes/Untitled]
 #
 # - <工作目录>/lib-m3：真实库的副本（数据库用 .backup，预览用 APFS 克隆），不改用户的库；
 # - PAICARDA（卡 A）、PAIBACKUP（备份盘 B）：exFAT 映像，放从真实卡复制并改名的 6 组照片。
@@ -8,9 +8,9 @@
 #   场景会删掉 A 上的几个文件、推出 B；真实卡只读。
 set -euo pipefail
 
-work=${1:?用法：Scripts/m3-test-volumes.sh <工作目录> [真实卡的挂载点]}
+work=${1:?用法：Scripts/test/m3-test-volumes.sh <工作目录> [真实卡的挂载点]}
 card=${2:-/Volumes/Untitled}
-project_directory=${0:A:h:h}
+project_directory=${0:A:h:h:h}
 library="$HOME/Library/Application Support/PhotoAI-Mac-v2"
 
 mkdir -p "$work"

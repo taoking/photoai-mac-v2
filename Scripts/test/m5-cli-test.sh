@@ -1,14 +1,14 @@
 #!/bin/zsh
 # M5 验收用：命令行和软件一起用（PHOTOAI_SCENARIO=cli）。不需要卡插着。
-# 用法：Scripts/m5-cli-test.sh <工作目录>
+# 用法：Scripts/test/m5-cli-test.sh <工作目录>
 #
 # 1. 复制真实库到 <工作目录>/lib-m5（数据库用 .backup，预览用 APFS 克隆），不改用户的库；
 # 2. 软件关闭时用命令行打 3 星、加入「命令行·关闭时」；
 # 3. 打开软件走场景：核对第 2 步的结果，再在软件开着时跑命令行，切回窗口后核对刷新。
 set -euo pipefail
 
-work=${1:?用法：Scripts/m5-cli-test.sh <工作目录>}
-project_directory=${0:A:h:h}
+work=${1:?用法：Scripts/test/m5-cli-test.sh <工作目录>}
+project_directory=${0:A:h:h:h}
 library="$HOME/Library/Application Support/PhotoAI-Mac-v2"
 
 cd "$project_directory"

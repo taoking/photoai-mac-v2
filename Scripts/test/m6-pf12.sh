@@ -1,6 +1,6 @@
 #!/bin/zsh
 # PF-12：后台人物、OCR 运行时 PF-2、PF-6、PF-7 不退化。不需要卡插着，要先装人脸识别模型。
-# 用法：Scripts/m6-pf12.sh <工作目录>
+# 用法：Scripts/test/m6-pf12.sh <工作目录>
 #
 # 同一份数据（真实库的副本，分析全是“待做”）、同一台机器、同样的操作，跑三遍：
 #   off：后台分析关（PHOTOAI_ANALYSIS=off）；
@@ -12,8 +12,8 @@
 # 每次都重新复制库，分析从头开始。
 set -uo pipefail
 
-work=${1:?用法：Scripts/m6-pf12.sh <工作目录>}
-project_directory=${0:A:h:h}
+work=${1:?用法：Scripts/test/m6-pf12.sh <工作目录>}
+project_directory=${0:A:h:h:h}
 library="$HOME/Library/Application Support/PhotoAI-Mac-v2"
 app=$project_directory/.build/PhotoAI-v2.app/Contents/MacOS/PhotoAIApp
 

@@ -1,7 +1,7 @@
 import AppKit
 import PhotoAICore
 
-/// `PHOTOAI_SCENARIO=analysis`：M6 后台分析与搜索（计划 · M6 验收）。准备工作见 `Scripts/m6-analysis-test.sh`。
+/// `PHOTOAI_SCENARIO=analysis`：M6 后台分析与搜索（计划 · M6 验收）。准备工作见 `Scripts/test/m6-analysis-test.sh`。
 ///
 /// 库的副本里分析状态全是“待做”：先看 OCR、人物在后台开始，暂停后不再前进、设置记住，继续后接着做；
 /// 等全部做完，再按 OCR 的一行字、月份（`2026-08` 是日期不是编号）、编号范围、人名搜索，核对结果，

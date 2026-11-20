@@ -1,7 +1,7 @@
 import AppKit
 import PhotoAICore
 
-/// `PHOTOAI_SCENARIO=inspector`：检查器的直方图和导航器（阶段版本 0.6）。准备工作见 `Scripts/inspector-test.sh`。
+/// `PHOTOAI_SCENARIO=inspector`：检查器的直方图和导航器（阶段版本 0.6）。准备工作见 `Scripts/test/inspector-test.sh`。
 ///
 /// - 直方图：单张视图停在一张照片上算出来，四个通道各数满全部像素；快速翻页时不算中间的照片；
 /// - 导航器：只在单张视图放大时出现；框的大小和放大的视图里看得见的部分一致，换比例跟着变；

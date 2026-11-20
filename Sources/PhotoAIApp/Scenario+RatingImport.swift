@@ -1,7 +1,7 @@
 import AppKit
 import PhotoAICore
 
-/// `PHOTOAI_SCENARIO=ratingimport`：从文件导入星级（迭代 I-2）。准备工作见 `Scripts/rating-import-test.sh`。
+/// `PHOTOAI_SCENARIO=ratingimport`：从文件导入星级（迭代 I-2）。准备工作见 `Scripts/test/rating-import-test.sh`。
 ///
 /// 用真实库里的照片写一个 `.md`（文件名、编号、带扩展名、同一张写两次、没有的编号、标题和格式不对的行），
 /// 读进来先看确认面板里的数，导入后核对内存和库里的星级，`⌘Z` 整批撤销。不需要卡插着。只对库的副本用。

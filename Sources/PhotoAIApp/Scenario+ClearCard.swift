@@ -2,7 +2,7 @@ import AppKit
 import CryptoKit
 import PhotoAICore
 
-/// `PHOTOAI_SCENARIO=clearcard`：清卡与无卷关联照片（计划 · M4）。准备工作和 M3 一样（`Scripts/m3-test-volumes.sh`）：
+/// `PHOTOAI_SCENARIO=clearcard`：清卡与无卷关联照片（计划 · M4）。准备工作和 M3 一样（`Scripts/test/m3-test-volumes.sh`）：
 /// 真实存储卡、测试映像 `PAICARDA`（卡 A：TST00001–5 的 RAW + JPEG）和 `PAIBACKUP`（备份盘 B：TST00001 两种、TST00002 的 JPEG、TST00006）。
 ///
 /// - 真实卡：只做清卡检查（只读），再在库的副本里移除，进入无卷关联照片后删掉 3 张；
