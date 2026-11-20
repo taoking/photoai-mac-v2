@@ -160,6 +160,14 @@ final class AppModel {
     var zoomViewport = CGSize(width: 1, height: 1)
     /// 检查器直方图的缓存（按 480 缩略图算的）。
     @ObservationIgnored var histograms: [PhotoID: Histogram] = [:]
+    /// 照片上显示相机的对焦框（`A`），记在本机设置里。
+    var showFocusPoint = UserDefaults.standard.bool(forKey: "showFocusPoint") {
+        didSet { UserDefaults.standard.set(showFocusPoint, forKey: "showFocusPoint") }
+    }
+    /// 查过的对焦框：值是 nil 表示这张没有。
+    var focusAreas: [PhotoID: FocusArea?] = [:]
+    @ObservationIgnored var focusLoading: Set<PhotoID> = []
+    @ObservationIgnored var focusTask: Task<Void, Never>?
     /// 放大时各张照片的原文件读到哪一步。只留当前看的几张，解码后的原图很占内存。
     var originals: [PhotoID: OriginalState] = [:]
     /// 导出进行中：状态栏的进度。
@@ -331,6 +339,7 @@ final class AppModel {
                 for (id, _) in onlineVolumes { enqueueScan(id) }
                 startPreviews()
                 startAnalysis()
+                startFocusReading()
             }
         }
         watchInteraction()
@@ -638,6 +647,7 @@ final class AppModel {
         reloadPhotos(reason: .scan)
         reloadSidebar()
         startPreviews()
+        startFocusReading()
         runNextScan()
     }
 
@@ -700,6 +710,7 @@ final class AppModel {
         reloadPhotos(reason: .scan)
         reloadSidebar()
         startAnalysis()
+        startFocusReading()
         if !previewsPaused, Set(onlineVolumes.keys) != Set(previewMounts.keys) {
             startPreviews()
         }

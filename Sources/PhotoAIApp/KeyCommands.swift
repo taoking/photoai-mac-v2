@@ -13,6 +13,7 @@ enum PhotoCommand: Hashable {
     /// 两张比较时：焦点格 Pick、另一张 Reject。
     case pickFocusRejectOther
     case toggleSingle, compare, focusMode, escape, toggleFilterBar, infoOverlay, zoom, zoomIn, zoomOut, zoomToFit
+    case toggleFocusPoint, zoomToFocus
     case showGrid, showSingle, showCompare
     case addToLastCollection, addToCollection, removeFromCollection
     case selectAll, undo, redo
@@ -53,6 +54,8 @@ enum PhotoCommand: Hashable {
         case .zoomIn: Shortcut(key: "=", modifiers: .command, display: "⌘+")
         case .zoomOut: Shortcut(key: "-", modifiers: .command, display: "⌘−")
         case .zoomToFit: Shortcut(key: "0", modifiers: .command, display: "⌘0")
+        case .toggleFocusPoint: Shortcut(key: "a", display: "A")
+        case .zoomToFocus: Shortcut(key: "z", modifiers: .shift, display: "⇧Z")
         case .showGrid: Shortcut(key: "1", modifiers: .command, display: "⌘1")
         case .showSingle: Shortcut(key: "2", modifiers: .command, display: "⌘2")
         case .showCompare: Shortcut(key: "3", modifiers: .command, display: "⌘3")
@@ -92,6 +95,8 @@ enum PhotoCommand: Hashable {
         case .zoomIn: "放大一档（50% / 100% / 200%）"
         case .zoomOut: "缩小一档"
         case .zoomToFit: "适合窗口"
+        case .toggleFocusPoint: "显示 / 隐藏对焦框"
+        case .zoomToFocus: "放大到对焦点（100%）"
         case .showGrid: "网格"
         case .showSingle: "单张"
         case .showCompare: "比较"
@@ -110,7 +115,7 @@ enum PhotoCommand: Hashable {
     /// 速查表的分组和顺序。
     static let reference: [(String, [PhotoCommand])] = [
         ("浏览", [.previous, .next, .rowUp, .rowDown, .toggleSingle, .compare, .focusMode, .escape, .toggleFilterBar, .infoOverlay,
-                .zoom, .zoomIn, .zoomOut, .zoomToFit, .showGrid, .showSingle, .showCompare]),
+                .zoom, .zoomIn, .zoomOut, .zoomToFit, .toggleFocusPoint, .zoomToFocus, .showGrid, .showSingle, .showCompare]),
         ("打星与标记", [.rate(1), .rate(2), .rate(3), .rate(4), .rate(5), .rate(0),
                      .flag(.pick), .flag(.reject), .flag(.none), .pickFocusRejectOther]),
         ("标签", (0..<4).map { .toggleLabel(slot: $0, viaOption: false) } + (0..<9).map { .toggleLabel(slot: $0, viaOption: true) }
@@ -273,6 +278,8 @@ struct PhotoCommands: Commands {
             item(.zoomIn)
             item(.zoomOut)
             item(.zoomToFit)
+            item(.toggleFocusPoint, title: model.showFocusPoint ? "隐藏对焦框" : "显示对焦框")
+            item(.zoomToFocus)
             Divider()
             Picker("背景", selection: style(\.background)) {
                 ForEach(ViewerStyle.Background.allCases) { Text($0.title).tag($0) }

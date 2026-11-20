@@ -6,7 +6,9 @@ import PhotoAICore
 /// - 直方图：单张视图停在一张照片上算出来，四个通道各数满全部像素；快速翻页时不算中间的照片；
 /// - 导航器：只在单张视图放大时出现；框的大小和放大的视图里看得见的部分一致，换比例跟着变；
 ///   在导航器上点（和拖动走同一个方法），放大的画面跟过去，框不出照片；回到适合窗口后导航器收起。
-/// 不需要卡插着（卷离线时放大的是预览）。只对库的副本用。
+/// - 对焦框（迭代 B-10）：真实卡插着时后台读完整张卡的对焦框；`A` 在照片上显示，`⇧Z` 以对焦框为中心放大到 100%；
+///   比较视图里 `⇧Z` 不放大；读过的框存在库里，卡拔掉照样能显示。
+/// 对焦框那部分要真实卡插着（`PHOTOAI_SCENARIO_CARD`，默认 Untitled），其余不需要。只对库的副本用。
 extension ScenarioRunner {
     func buildInspector() {
         var first: PhotoID = 0
@@ -101,6 +103,81 @@ extension ScenarioRunner {
         step("比较视图") { [self] in
             check(model.viewMode == .compare, "比较视图里检查器显示焦点格的直方图，不显示导航器（导航器只在单张视图）")
             snapshot("inspector-compare")
+            model.setView(.grid)
+        }
+        buildFocusPoint()
+    }
+
+    private func buildFocusPoint() {
+        let cardName = environment["PHOTOAI_SCENARIO_CARD"] ?? "Untitled"
+        let savedSetting = model.showFocusPoint
+        var target: PhotoID = 0
+        var area = FocusArea(x: 0, y: 0, width: 0, height: 0)
+
+        wait("对焦框在后台读完", timeout: 120) { [self] in
+            model.focusTask == nil && model.onlineVolumes.values.contains { $0.lastPathComponent == cardName }
+                && ((try? model.reader?.focusCounts())??["pending"] ?? 0) == 0
+        }
+        step("对焦框读进库") { [self] in
+            let counts = (try? model.reader?.focusCounts()) ?? [:]
+            let found = counts["found"] ?? 0, none = counts["none"] ?? 0
+            check(found > 2_000, "读到对焦框 \(found) 张，没有记录 \(none) 张，待读 \(counts["pending"] ?? 0) 张")
+            model.showFocusPoint = false
+            model.selection = .all
+            model.sort = .captureDateDescending
+        }
+        step("找一张对焦框不在正中的照片，打开单张视图") { [self] in
+            for id in model.resultIDs {
+                if let found = try? model.reader?.focusArea(of: id), abs(found.centerX - 0.5) > 0.15 || abs(found.centerY - 0.5) > 0.15 {
+                    target = id
+                    area = found
+                    break
+                }
+            }
+            check(target != 0, String(format: "找到 %@，对焦框中心 (%.3f, %.3f)", model.photo(target)?.baseName ?? "", area.centerX, area.centerY))
+            model.openSingle(target)
+        }
+        step("按 A 显示对焦框") { [self] in press("a", keyCode: 0) }
+        wait("对焦框查好", timeout: 5) { [self] in model.focusAreas[target] != nil }
+        step("单张视图上的对焦框") { [self] in
+            check(model.showFocusPoint, "A 打开对焦框，记进本机设置：\(UserDefaults.standard.bool(forKey: "showFocusPoint"))")
+            if case .some(.some(let shown)) = model.focusAreas[target] {
+                check(shown == area, "显示的是库里存的框")
+            } else {
+                check(false, "显示的是库里存的框")
+            }
+            snapshot("focus-single")
+        }
+        step("按 ⇧Z 放大到对焦点") { [self] in press("Z", keyCode: 6, flags: .shift) }
+        step("⇧Z 之后") { [self] in
+            let wanted = zoomViews().first?.reachableCenter(CGPoint(x: area.centerX, y: area.centerY)) ?? .zero
+            let center = zoomViews().first?.visibleCenter ?? .zero
+            check(model.zoomed && abs(model.zoomScale - 1) < 0.001, "放大到 100%：\(model.zoomPercent)")
+            check(near(center, wanted), String(format: "画面中心 (%.3f, %.3f) 对着对焦框 (%.3f, %.3f)", center.x, center.y, wanted.x, wanted.y))
+            check(zoomViews().first.map { ($0.documentView as? ZoomCanvas)?.focus == area } ?? false, "放大后照片上也画着对焦框")
+            snapshot("focus-zoomed")
+        }
+        step("再按一次 ⇧Z：已经放大时移过去") { [self] in
+            model.setZoomCenter(CGPoint(x: 0.1, y: 0.1))
+            press("Z", keyCode: 6, flags: .shift)
+        }
+        step("移回对焦点") { [self] in
+            let wanted = zoomViews().first?.reachableCenter(CGPoint(x: area.centerX, y: area.centerY)) ?? .zero
+            let center = zoomViews().first?.visibleCenter ?? .zero
+            check(near(center, wanted), String(format: "画面中心回到 (%.3f, %.3f)", center.x, center.y))
+            model.endZoom()
+            model.selectedPhotoIDs = Set(model.resultIDs.prefix(2))
+            model.setView(.compare)
+        }
+        step("比较视图里按 ⇧Z") { [self] in press("Z", keyCode: 6, flags: .shift) }
+        step("比较视图不放大") { [self] in
+            check(model.viewMode == .compare && !model.zoomed, "比较视图里 ⇧Z 只提示，不放大")
+            snapshot("focus-compare")
+        }
+        step("按 A 隐藏") { [self] in press("a", keyCode: 0) }
+        step("隐藏之后") { [self] in
+            check(!model.showFocusPoint, "再按 A 隐藏对焦框")
+            model.showFocusPoint = savedSetting
             model.setView(.grid)
         }
     }

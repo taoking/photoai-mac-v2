@@ -188,6 +188,17 @@ enum Schema {
             fetched_at REAL NOT NULL
         ) WITHOUT ROWID;
         CREATE INDEX photos_geo_cell ON photos(geo_cell) WHERE geo_cell IS NOT NULL;
+        """,
+        // 0.6.x：相机记录的对焦框。原片在线时后台读文件头（`FocusRunner`），卡拔掉以后照样能显示。
+        """
+        -- pending 还没读；found 读到了；none 这台相机没记（或没对上焦）。
+        ALTER TABLE photos ADD COLUMN focus_state TEXT NOT NULL DEFAULT 'pending';
+        -- 转正后的照片上，左上为原点，0–1。
+        ALTER TABLE photos ADD COLUMN focus_x REAL;
+        ALTER TABLE photos ADD COLUMN focus_y REAL;
+        ALTER TABLE photos ADD COLUMN focus_w REAL;
+        ALTER TABLE photos ADD COLUMN focus_h REAL;
+        CREATE INDEX photos_focus_state ON photos(focus_state) WHERE focus_state = 'pending';
         """
     ]
 

@@ -29,10 +29,12 @@ struct ZoomedPhoto: View {
         } else {
             CGSize(width: image?.width ?? 1600, height: image?.height ?? 1067)
         }
+        let focus: FocusArea? = if model.showFocusPoint, case .some(.some(let area)) = model.focusAreas[id] { area } else { nil }
         ZStack(alignment: noteAtBottom ? .bottom : .top) {
             ZoomedImage(
                 image: image,
                 pixelSize: pixelSize,
+                focus: focus,
                 center: model.zoomCenter,
                 scale: model.zoomScale,
                 onPan: { model.setZoomCenter($0) },
@@ -50,6 +52,7 @@ struct ZoomedPhoto: View {
                 .padding(noteAtBottom ? .bottom : .top, 10)
                 .allowsHitTesting(false)
         }
+        .task(id: "\(id)-\(model.showFocusPoint)") { if model.showFocusPoint { model.loadFocusArea(of: id) } }
     }
 
     static func size(longEdge: Int, like image: CGImage?) -> CGSize? {
@@ -75,6 +78,7 @@ struct ZoomedPhoto: View {
 struct ZoomedImage: NSViewRepresentable {
     let image: CGImage?
     let pixelSize: CGSize
+    let focus: FocusArea?
     let center: CGPoint
     let scale: CGFloat
     let onPan: (CGPoint) -> Void
@@ -96,6 +100,7 @@ struct ZoomedImage: NSViewRepresentable {
         view.onViewport = onViewport
         view.onClick = onClick
         view.update(image: image, pixelSize: pixelSize, center: center, scale: scale)
+        view.setFocus(focus)
     }
 }
 
@@ -269,8 +274,14 @@ final class ZoomScrollView: NSScrollView {
         onViewport?(viewport)
     }
 
+    func setFocus(_ area: FocusArea?) {
+        canvas.focus = area
+        canvas.focusLineScale = 1 / max(magnification, 0.01)
+    }
+
     @objc private func boundsChanged() {
         reportViewport()
+        canvas.focusLineScale = 1 / max(magnification, 0.01)
         let size = contentView.bounds.size
         let resized = abs(size.width - lastVisibleSize.width) > 0.5 || abs(size.height - lastVisibleSize.height) > 0.5
         lastVisibleSize = size
@@ -299,7 +310,17 @@ final class ZoomCanvas: NSView {
     var image: CGImage? {
         didSet { imageLayer.contents = image; needsDisplay = true }
     }
+    /// 相机的对焦框（照片上 0–1）；nil 不画。
+    var focus: FocusArea? {
+        didSet { if focus != oldValue { layoutFocus() } }
+    }
+    /// 1 ÷ 放大比例：画布被放大，线宽反着缩，屏幕上粗细不变。
+    var focusLineScale: CGFloat = 1 {
+        didSet { if abs(focusLineScale - oldValue) > 0.0001 { layoutFocus() } }
+    }
     private let imageLayer = CALayer()
+    private let focusOutline = CAShapeLayer()
+    private let focusLine = CAShapeLayer()
     private var dragStart: NSPoint?
     private var dragged = false
 
@@ -310,6 +331,12 @@ final class ZoomCanvas: NSView {
         imageLayer.minificationFilter = .trilinear
         imageLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
         layer?.addSublayer(imageLayer)
+        for (shape, color) in [(focusOutline, NSColor.black.withAlphaComponent(0.6)), (focusLine, NSColor(srgbRed: 0.3, green: 1, blue: 0.4, alpha: 1))] {
+            shape.fillColor = nil
+            shape.strokeColor = color.cgColor
+            shape.actions = ["path": NSNull(), "lineWidth": NSNull(), "hidden": NSNull()]
+            layer?.addSublayer(shape)
+        }
     }
 
     @available(*, unavailable)
@@ -322,11 +349,32 @@ final class ZoomCanvas: NSView {
     override func layout() {
         super.layout()
         imageLayer.frame = bounds
+        layoutFocus()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         imageLayer.frame = bounds
+        layoutFocus()
+    }
+
+    private func layoutFocus() {
+        guard let focus, bounds.width > 0 else {
+            focusLine.isHidden = true
+            focusOutline.isHidden = true
+            return
+        }
+        // 画布是翻转的（左上为原点），图层坐标跟着视图走。
+        let minimum = 14 * focusLineScale
+        let width = max(focus.width * bounds.width, minimum), height = max(focus.height * bounds.height, minimum)
+        let rect = CGRect(x: focus.centerX * bounds.width - width / 2, y: focus.centerY * bounds.height - height / 2, width: width, height: height)
+        let path = CGPath(rect: rect, transform: nil)
+        focusOutline.path = path
+        focusOutline.lineWidth = 3.5 * focusLineScale
+        focusLine.path = path
+        focusLine.lineWidth = 1.5 * focusLineScale
+        focusLine.isHidden = false
+        focusOutline.isHidden = false
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -336,6 +384,16 @@ final class ZoomCanvas: NSView {
         context.scaleBy(x: 1, y: -1)
         context.draw(image, in: bounds)
         context.restoreGState()
+        if let path = focusLine.path, !focusLine.isHidden {
+            context.addPath(path)
+            context.setStrokeColor(focusOutline.strokeColor ?? .black)
+            context.setLineWidth(focusOutline.lineWidth)
+            context.strokePath()
+            context.addPath(path)
+            context.setStrokeColor(focusLine.strokeColor ?? .white)
+            context.setLineWidth(focusLine.lineWidth)
+            context.strokePath()
+        }
     }
 
     override func resetCursorRects() { addCursorRect(visibleRect, cursor: .openHand) }

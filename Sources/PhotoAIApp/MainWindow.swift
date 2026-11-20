@@ -601,6 +601,7 @@ struct InspectorView: View {
                 Section {
                     HistogramPanel(photoID: id)
                     ExposureStrip(detail: detail)
+                    FocusPointRow(detail: detail)
                 }
                 Section("选片") {
                     LabeledContent("星级") {
