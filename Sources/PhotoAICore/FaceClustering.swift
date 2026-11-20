@@ -5,7 +5,8 @@ import Foundation
 ///
 /// 做法：每个人物用它所有脸特征的平均方向（中心）代表。新脸和所有中心比，够像就归进去、更新中心；
 /// 都不像就自成一个未命名的人物。最后把彼此很像的未命名人物合并（也可以并进有名字的人物），
-/// 两个有名字的人物从不自动合并。比的是余弦相似度，十万张照片约三四万张脸、几千个人物，用矩阵乘一次算完。
+/// 两个有名字的人物从不自动合并。比的是余弦相似度，十万张照片约三四万张脸、几千个人物，用矩阵乘算；
+/// 合并只比这次有变化的人物和其他人物。
 public struct FaceClusterer: Sendable {
     /// 新脸和人物中心的相似度达到这个值就归进去。真实库上 0.3–0.5 分出的组几乎一样，取中间。
     public var assignThreshold: Float = 0.4
@@ -74,25 +75,27 @@ public struct FaceClusterer: Sendable {
         }
 
         // 合并：未命名的并进最像的那个（有名字的优先保留），反复做直到没有可以并的。
+        // 没变的人物之间上一轮已经比过，只比这次收了新脸或新建的。
         var result = Result()
         var alive = Array(repeating: true, count: clusters.count)
-        var changed = true
-        while changed {
-            changed = false
-            let centers = clusters.map { $0.center }
-            let similarities = Self.similarityMatrix(centers)
+        var dirty = Set(clusters.indices.filter { !clusters[$0].faces.isEmpty })
+        while !dirty.isEmpty {
+            let rows = dirty.sorted()
+            let similarities = Self.similarityMatrix(rows.map { clusters[$0].center }, clusters.map { $0.center })
             let count = clusters.count
             var pairs: [(Float, Int, Int)] = []
-            for i in 0..<count where alive[i] {
-                for j in (i + 1)..<count where alive[j] && !(clusters[i].isNamed && clusters[j].isNamed) {
-                    let value = similarities[i * count + j]
+            for (rowIndex, i) in rows.enumerated() where alive[i] {
+                for j in 0..<count where j != i && alive[j] && !(clusters[i].isNamed && clusters[j].isNamed) {
+                    // 两个都在这次变了的，只算一次。
+                    if dirty.contains(j), j < i { continue }
+                    let value = similarities[rowIndex * count + j]
                     if value >= mergeThreshold { pairs.append((value, i, j)) }
                 }
             }
             pairs.sort { $0.0 > $1.0 }
             var touched = Set<Int>()
+            var next = Set<Int>()
             for (_, i, j) in pairs where !touched.contains(i) && !touched.contains(j) {
-                // 并入有名字的；都没名字时并入已有的、再并入大的。
                 let (keep, drop) = Self.mergeOrder(clusters[i], i, clusters[j], j)
                 if clusters[drop].faces.contains(where: { $0.rejectedPerson == clusters[keep].id }) { continue }
                 clusters[keep].absorb(clusters[drop])
@@ -103,8 +106,9 @@ public struct FaceClusterer: Sendable {
                 }
                 alive[drop] = false
                 touched.formUnion([i, j])
-                changed = true
+                next.insert(keep)
             }
+            dirty = next
         }
 
         for (index, cluster) in clusters.enumerated() where alive[index] {
@@ -154,17 +158,22 @@ public struct FaceClusterer: Sendable {
         return a.count >= b.count ? (i, j) : (j, i)
     }
 
-    /// 中心两两的余弦相似度，按行排成一维。
-    static func similarityMatrix(_ centers: [[Float]]) -> [Float] {
-        let count = centers.count
-        guard count > 0, let length = centers.first?.count, length > 0 else { return [] }
-        var matrix = [Float](repeating: 0, count: count * length)
-        for (row, center) in centers.enumerated() where center.count == length {
-            matrix.replaceSubrange(row * length..<(row + 1) * length, with: center)
+    /// `rows` 里每个中心和 `columns` 里每个中心的余弦相似度，按行排成一维。
+    static func similarityMatrix(_ rows: [[Float]], _ columns: [[Float]]) -> [Float] {
+        guard !rows.isEmpty, !columns.isEmpty, let length = columns.first?.count, length > 0 else { return [] }
+        func flatten(_ vectors: [[Float]]) -> [Float] {
+            var matrix = [Float](repeating: 0, count: vectors.count * length)
+            for (row, vector) in vectors.enumerated() where vector.count == length {
+                matrix.replaceSubrange(row * length..<(row + 1) * length, with: vector)
+            }
+            return matrix
         }
-        var output = [Float](repeating: 0, count: count * count)
-        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, Int32(count), Int32(count), Int32(length),
-                    1, matrix, Int32(length), matrix, Int32(length), 0, &output, Int32(count))
+        // vDSP_mmul 算 A(m×p)·B(p×n)：列那一组先转置成 p×n。
+        let a = flatten(rows), b = flatten(columns)
+        var transposed = [Float](repeating: 0, count: b.count)
+        vDSP_mtrans(b, 1, &transposed, 1, vDSP_Length(length), vDSP_Length(columns.count))
+        var output = [Float](repeating: 0, count: rows.count * columns.count)
+        vDSP_mmul(a, 1, transposed, 1, &output, 1, vDSP_Length(rows.count), vDSP_Length(columns.count), vDSP_Length(length))
         return output
     }
 }

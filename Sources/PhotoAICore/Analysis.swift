@@ -159,49 +159,60 @@ extension Library {
 
     /// 把还没归属的脸归到人物里（`FaceClusterer`）。已经归好的脸、用户的决定都不动；
     /// 未命名的人物可能被并进别的人物。返回这次归了几张脸。
+    ///
+    /// 分组在事务外算（人物多时要几百毫秒，不能占着写锁让打星等着），事务里只写结果，
+    /// 写之前再核对一次：期间被用户改过的脸、起了名字的人物不动。
     @discardableResult
     public func assignPendingFaces(_ clusterer: FaceClusterer = FaceClusterer()) throws -> Int {
-        try db.transaction {
-            let faces = try db.all(
-                "SELECT id, feature, rejected_person_id FROM faces WHERE person_id IS NULL AND feature IS NOT NULL ORDER BY id;"
-            ) { row in
-                FaceClusterer.NewFace(
-                    id: row.int64(0),
-                    feature: FaceMath.vector(row.blob(1) ?? Data()),
-                    rejectedPerson: row.isNull(2) ? nil : row.int64(2)
-                )
-            }.filter { $0.feature.count == FaceEmbedder.featureLength }
-            guard !faces.isEmpty else { return 0 }
-            let people = try db.all(
-                "SELECT id, name IS NOT NULL, feature_sum, face_count FROM people WHERE face_count > 0;"
-            ) { row in
-                FaceClusterer.Person(
-                    id: row.int64(0), isNamed: row.int(1) != 0,
-                    sum: FaceMath.vector(row.blob(2) ?? Data()), count: row.int(3)
-                )
-            }.filter { $0.sum.count == FaceEmbedder.featureLength }
-            let result = clusterer.cluster(faces, into: people)
+        let faces = try db.all(
+            "SELECT id, feature, rejected_person_id FROM faces WHERE person_id IS NULL AND feature IS NOT NULL ORDER BY id;"
+        ) { row in
+            FaceClusterer.NewFace(
+                id: row.int64(0),
+                feature: FaceMath.vector(row.blob(1) ?? Data()),
+                rejectedPerson: row.isNull(2) ? nil : row.int64(2)
+            )
+        }.filter { $0.feature.count == FaceEmbedder.featureLength }
+        guard !faces.isEmpty else { return 0 }
+        let people = try db.all(
+            "SELECT id, name IS NOT NULL, feature_sum, face_count FROM people WHERE face_count > 0;"
+        ) { row in
+            FaceClusterer.Person(
+                id: row.int64(0), isNamed: row.int(1) != 0,
+                sum: FaceMath.vector(row.blob(2) ?? Data()), count: row.int(3)
+            )
+        }.filter { $0.sum.count == FaceEmbedder.featureLength }
+        let result = clusterer.cluster(faces, into: people)
 
+        return try db.transaction {
             var touched = Set<PersonID>()
+            var assigned = 0
             for (from, to) in result.merged {
+                // 期间被起了名字的人物不并。
+                guard try db.scalarInt("SELECT COUNT(*) FROM people WHERE id = ? AND name IS NULL;", [from]) == 1,
+                      try db.scalarInt("SELECT COUNT(*) FROM people WHERE id = ?;", [to]) == 1 else { continue }
                 try db.run("UPDATE faces SET person_id = ? WHERE person_id = ?;", [to, from])
                 try db.run("UPDATE faces SET rejected_person_id = ? WHERE rejected_person_id = ?;", [to, from])
                 try db.run("DELETE FROM people WHERE id = ?;", [from])
                 touched.insert(to)
             }
             for (face, person) in result.assigned {
-                try db.run("UPDATE faces SET person_id = ? WHERE id = ?;", [person, face])
-                touched.insert(person)
+                let target = result.merged[person] ?? person
+                assigned += try db.run(
+                    "UPDATE faces SET person_id = ? WHERE id = ? AND person_id IS NULL AND EXISTS (SELECT 1 FROM people WHERE id = ?);",
+                    [target, face, target]
+                )
+                touched.insert(target)
             }
             for group in result.newPeople {
                 let person = try db.insert("INSERT INTO people (created_at) VALUES (?);", [now()])
                 for face in group {
-                    try db.run("UPDATE faces SET person_id = ? WHERE id = ?;", [person, face])
+                    assigned += try db.run("UPDATE faces SET person_id = ? WHERE id = ? AND person_id IS NULL;", [person, face])
                 }
                 touched.insert(person)
             }
             try refreshPersonSums(touched)
-            return faces.count
+            return assigned
         }
     }
 
