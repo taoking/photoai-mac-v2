@@ -51,6 +51,15 @@ extension AppModel {
         loadOriginalsForZoom()
     }
 
+    /// 单张视图里单击照片：放大到 50%（用户 2026-11-20 要求，比 100% 更好看清构图）；
+    /// 适合窗口已经不小于 50% 时放大到 100%。放大时单击回到适合窗口。
+    func clickZoom(at center: CGPoint) {
+        guard !zoomed else { return endZoom() }
+        zoom(to: fitScale < Self.clickZoomScale * 0.99 ? Self.clickZoomScale : 1, at: center)
+    }
+
+    static let clickZoomScale: CGFloat = 0.5
+
     /// 捏合时比例变了（比较视图各格共用）。
     func setZoomScale(_ scale: CGFloat) {
         if abs(scale - zoomScale) > 0.001 { zoomScale = scale }

@@ -896,7 +896,9 @@ $('#single').addEventListener('click', e => {
   const st = e.target.closest('[data-star]');
   if (st) { const n = +st.dataset.star; setRating([S.focus], P[S.focus].rating === n ? 0 : n); return; }
   const ft = e.target.closest('.ft');
-  if (ft) { focusOnly(+ft.dataset.id); renderSingle(); renderInspector(); }
+  if (ft) { focusOnly(+ft.dataset.id); renderSingle(); renderInspector(); return; }
+  // 单击照片放大到 50%（用户 2026-11-20 确认），放大时单击回到适合窗口。
+  if (e.target.closest('.img')) { if (S.zoom) { S.zoom = false; S.zoomScale = 1; } else { S.zoom = true; S.zoomScale = 0.5; } renderView(); }
 });
 window.addEventListener('resize', () => { if (S.view === 'single') renderSingle(); if (S.view === 'compare') renderCompare(); });
 

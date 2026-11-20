@@ -113,6 +113,8 @@ final class ZoomScrollView: NSScrollView {
     private var image: CGImage?
     /// 程序自己在滚动：不回报中心，免得几个格子互相推。
     private var applyingCenter = false
+    /// 上次看到的可视区域大小（照片坐标）。大小变了是视图刚出现、窗口缩放或改了比例，不是用户在平移。
+    private var lastVisibleSize = NSSize.zero
 
     init() {
         super.init(frame: .zero)
@@ -221,6 +223,18 @@ final class ZoomScrollView: NSScrollView {
     /// 现在画面中心在照片上的位置（验收场景核对同步用）。
     var visibleCenter: CGPoint { currentCenter }
 
+    /// `center` 在当前比例下能摆到的最近位置：照片边缘不会滚进画面（验收场景用）。
+    func reachableCenter(_ center: CGPoint) -> CGPoint {
+        let bounds = contentView.bounds
+        let size = canvas.frame.size
+        guard size.width > 0, size.height > 0 else { return center }
+        func reach(_ value: CGFloat, visible: CGFloat, total: CGFloat) -> CGFloat {
+            let half = visible / total / 2
+            return half >= 0.5 ? 0.5 : min(max(value, half), 1 - half)
+        }
+        return CGPoint(x: reach(center.x, visible: bounds.width, total: size.width), y: reach(center.y, visible: bounds.height, total: size.height))
+    }
+
     private var currentCenter: CGPoint {
         let bounds = contentView.bounds
         let size = canvas.frame.size
@@ -239,7 +253,13 @@ final class ZoomScrollView: NSScrollView {
     }
 
     @objc private func boundsChanged() {
+        let size = contentView.bounds.size
+        let resized = abs(size.width - lastVisibleSize.width) > 0.5 || abs(size.height - lastVisibleSize.height) > 0.5
+        lastVisibleSize = size
         guard !applyingCenter else { return }
+        // 视图刚出现或窗口缩放时可视区域变了，系统会挪动画面，这不是平移：回到想看的位置，
+        // 不然单击放大时单击的位置会被这一下改掉。
+        if resized, !inLiveMagnify { return scroll(to: wantedCenter) }
         wantedCenter = currentCenter
         onPan?(wantedCenter)
         // 捏合中：比例随时报上去，比较视图的其他格跟着变，角上的比例也跟着变。

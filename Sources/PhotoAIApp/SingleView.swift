@@ -29,7 +29,7 @@ struct SingleView: View {
                                 .scaleEffect(pinch, anchor: pinchAnchor)
                                 .contentShape(Rectangle())
                                 .gesture(SpatialTapGesture().onEnded { value in
-                                    model.toggleZoom(at: zoomPoint(value.location, in: geometry.size, id: id))
+                                    model.clickZoom(at: zoomPoint(value.location, in: geometry.size, id: id))
                                 })
                                 .simultaneousGesture(MagnifyGesture()
                                     .onChanged { value in
@@ -258,6 +258,8 @@ struct Filmstrip: View {
                 .padding(.horizontal, 8)
             }
             .frame(height: height + 14)
+            // 不透明：网格一直在单张视图下面，透明的话网格里选中那格的蓝框会从胶片条的空隙透出来。
+            .background(Color(nsColor: .windowBackgroundColor))
             .onAppear { if let id = model.focusedPhotoID { proxy.scrollTo(id, anchor: .center) } }
             .onChange(of: model.focusedPhotoID) { _, id in
                 if let id { proxy.scrollTo(id, anchor: .center) }

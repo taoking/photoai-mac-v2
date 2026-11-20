@@ -154,6 +154,8 @@ final class ScenarioRunner {
             check(model.photo(firstTwenty[3])!.labelIDs == [classic, portrait], "第 4 张有“经典、人像”两个标签（⌥2）")
         }
         step("自动前进") { [self] in
+            // 翻过 20 张之后：胶片条里只有焦点那格有蓝框（网格在下面，以前选中那格的蓝框会透出来）。
+            snapshot("m2-single-turned")
             model.setAutoAdvance(true)
             let before = model.focusedPhotoID
             model.perform(.flag(.reject))
