@@ -92,6 +92,10 @@ extension AppModel {
         if abs(point.x - zoomCenter.x) > 0.0005 || abs(point.y - zoomCenter.y) > 0.0005 { zoomCenter = point }
     }
 
+    func setZoomViewport(_ viewport: CGSize) {
+        if abs(viewport.width - zoomViewport.width) > 0.002 || abs(viewport.height - zoomViewport.height) > 0.002 { zoomViewport = viewport }
+    }
+
     /// 放大时要看的照片：单张是焦点，比较是各格。
     var zoomIDs: [PhotoID] {
         viewMode == .compare ? compareIDs : focusedPhotoID.map { [$0] } ?? []

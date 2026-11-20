@@ -595,8 +595,14 @@ struct InspectorView: View {
         if let id = shownID, let detail = loaded?.id == id ? loaded?.detail : nil {
             let photo = model.photo(id) ?? detail.summary
             Form {
+                if model.viewMode == .single, model.zoomed {
+                    Section { NavigatorPanel(photoID: id) }
+                }
                 Section {
-                    LabeledContent("文件名", value: detail.summary.baseName)
+                    HistogramPanel(photoID: id)
+                    ExposureStrip(detail: detail)
+                }
+                Section("选片") {
                     LabeledContent("星级") {
                         StarRating(rating: photo.rating) { model.focusOnlyIfNeeded(id); model.setRating($0) }
                     }
@@ -610,14 +616,14 @@ struct InspectorView: View {
                         LabeledContent("收藏夹", value: detail.collectionNames.joined(separator: "、"))
                     }
                 }
-                Section {
+                Section("文件") {
+                    LabeledContent("文件名", value: detail.summary.baseName)
                     LabeledContent("格式", value: detail.extensions.joined(separator: " + "))
                     LabeledContent("拍摄时间", value: detail.summary.captureDate ?? "未知")
                     if let model = [detail.cameraMake, detail.cameraModel].compactMap({ $0 }).joined(separator: " ").nilIfEmpty {
                         LabeledContent("相机", value: model)
                     }
                     if let lens = detail.lens { LabeledContent("镜头", value: lens) }
-                    if let exposure = ExposureText.make(detail) { LabeledContent("参数", value: exposure) }
                     if let width = detail.summary.width, let height = detail.summary.height {
                         LabeledContent("尺寸", value: "\(width) × \(height)")
                     }
@@ -725,6 +731,12 @@ struct LabelChips: View {
 
 enum ExposureText {
     static func make(_ detail: PhotoDetail) -> String? {
+        let parts = parts(detail)
+        return parts.isEmpty ? nil : parts.joined(separator: "  ")
+    }
+
+    /// 焦距、光圈、快门、ISO，有哪个给哪个。
+    static func parts(_ detail: PhotoDetail) -> [String] {
         var parts: [String] = []
         if let focal = detail.focalLength { parts.append("\(Int(focal)) mm") }
         if let aperture = detail.aperture { parts.append(String(format: "ƒ/%.1f", aperture)) }
@@ -732,7 +744,7 @@ enum ExposureText {
             parts.append(shutter >= 1 ? String(format: "%.1f s", shutter) : "1/\(Int((1 / shutter).rounded())) s")
         }
         if let iso = detail.iso { parts.append("ISO \(iso)") }
-        return parts.isEmpty ? nil : parts.joined(separator: "  ")
+        return parts
     }
 }
 

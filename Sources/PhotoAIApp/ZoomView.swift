@@ -39,6 +39,7 @@ struct ZoomedPhoto: View {
                 onScale: { model.setZoomScale($0) },
                 onFitScale: { model.fitScale = $0 },
                 onPinchedToFit: { model.endZoom() },
+                onViewport: { model.setZoomViewport($0) },
                 onClick: onClick
             )
             Text(note(state))
@@ -80,6 +81,7 @@ struct ZoomedImage: NSViewRepresentable {
     let onScale: (CGFloat) -> Void
     let onFitScale: (CGFloat) -> Void
     let onPinchedToFit: () -> Void
+    let onViewport: (CGSize) -> Void
     let onClick: () -> Void
 
     func makeNSView(context: Context) -> ZoomScrollView {
@@ -91,6 +93,7 @@ struct ZoomedImage: NSViewRepresentable {
         view.onScale = onScale
         view.onFitScale = onFitScale
         view.onPinchedToFit = onPinchedToFit
+        view.onViewport = onViewport
         view.onClick = onClick
         view.update(image: image, pixelSize: pixelSize, center: center, scale: scale)
     }
@@ -102,6 +105,7 @@ final class ZoomScrollView: NSScrollView {
     var onScale: ((CGFloat) -> Void)?
     var onFitScale: ((CGFloat) -> Void)?
     var onPinchedToFit: (() -> Void)?
+    var onViewport: ((CGSize) -> Void)?
     var onClick: (() -> Void)?
     private let canvas = ZoomCanvas()
     private var pixelSize = CGSize(width: 1, height: 1)
@@ -115,6 +119,8 @@ final class ZoomScrollView: NSScrollView {
     private var applyingCenter = false
     /// 上次看到的可视区域大小（照片坐标）。大小变了是视图刚出现、窗口缩放或改了比例，不是用户在平移。
     private var lastVisibleSize = NSSize.zero
+    /// 上次报给导航器的可视比例。
+    private var reportedViewport = CGSize.zero
 
     init() {
         super.init(frame: .zero)
@@ -252,7 +258,19 @@ final class ZoomScrollView: NSScrollView {
         applyingCenter = false
     }
 
+    /// 看得见照片的多大一块：只在比例、窗口大小变了时才变，平移不变，所以平移时不会多报。
+    private func reportViewport() {
+        let size = canvas.frame.size
+        guard size.width > 0, size.height > 0 else { return }
+        let bounds = contentView.bounds
+        let viewport = CGSize(width: min(bounds.width / size.width, 1), height: min(bounds.height / size.height, 1))
+        guard abs(viewport.width - reportedViewport.width) > 0.002 || abs(viewport.height - reportedViewport.height) > 0.002 else { return }
+        reportedViewport = viewport
+        onViewport?(viewport)
+    }
+
     @objc private func boundsChanged() {
+        reportViewport()
         let size = contentView.bounds.size
         let resized = abs(size.width - lastVisibleSize.width) > 0.5 || abs(size.height - lastVisibleSize.height) > 0.5
         lastVisibleSize = size

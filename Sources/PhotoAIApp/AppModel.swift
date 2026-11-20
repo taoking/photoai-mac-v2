@@ -156,6 +156,10 @@ final class AppModel {
     @ObservationIgnored var sharpTask: Task<Void, Never>?
     /// 放大时画面中心落在照片上的哪里（0–1，左上为原点），比较视图各格共用，平移同步。
     var zoomCenter = CGPoint(x: 0.5, y: 0.5)
+    /// 放大时看得见照片的多大一块（宽、高各占整张的比例，最大 1），由放大的视图报上来，导航器画框用。
+    var zoomViewport = CGSize(width: 1, height: 1)
+    /// 检查器直方图的缓存（按 480 缩略图算的）。
+    @ObservationIgnored var histograms: [PhotoID: Histogram] = [:]
     /// 放大时各张照片的原文件读到哪一步。只留当前看的几张，解码后的原图很占内存。
     var originals: [PhotoID: OriginalState] = [:]
     /// 导出进行中：状态栏的进度。

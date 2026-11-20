@@ -14,6 +14,7 @@ rm -rf "$app_directory"
 mkdir -p "$app_directory/Contents/MacOS" "$app_directory/Contents/Resources"
 install -m 0644 "$project_directory/Resources/Info.plist" "$app_directory/Contents/Info.plist"
 install -m 0755 "$binary_directory/PhotoAIApp" "$app_directory/Contents/MacOS/PhotoAIApp"
+install -m 0644 "$project_directory/Resources/AppIcon.icns" "$app_directory/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$app_directory"
 
 echo "$app_directory"
